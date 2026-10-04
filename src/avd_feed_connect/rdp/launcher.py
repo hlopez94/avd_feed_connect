@@ -85,7 +85,7 @@ def apply_client_hotkeys(mode, path=None):
 
 def build_argv(sdl, path, upn):
     """Assemble the sdl-freerdp command line for a full-screen CLI connection."""
-    argv = [sdl, path, "/gateway:type:arm", "/sec:aad"]
+    argv = [sdl, path, f"/gateway:{config.gateway_arg()}", "/sec:aad"]
     if upn:
         argv.append(f"/u:{upn}")
     # Pin the host cert on first use by default; AVD_CERT=ignore turns the check
