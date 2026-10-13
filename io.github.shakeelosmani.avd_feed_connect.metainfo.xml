@@ -60,6 +60,16 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.11" date="2026-10-13">
+      <description>
+        <ul>
+          <li>Updated the bundled FreeRDP to 3.32.2, fixing a clipboard bug
+          where copied text could lose or gain a character (for example pasting
+          "1234" instead of "12345") when copying between the local machine and
+          the remote PC. Thanks to Ewerton Mattos for the fix.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.10" date="2026-10-11">
       <description>
         <ul>
