@@ -135,32 +135,27 @@ modules:
     sources:
       - type: git
         url: https://github.com/FreeRDP/FreeRDP.git
-        # FreeRDP 3.32.1, the first tag containing everything we previously
-        # pinned master (8b5d1c40) for: the pulse hot-unplug + rdpsnd
-        # busy-loop fixes (PR #13334), the rdpecam stream-drain LED fix
-        # (3.32.0), and the rdpecam media-type validation fix (249d74364a) that
-        # makes V4L camera redirection work. It also picks up later cliprdr
-        # fixes (#13496, #13527) that stop the WinPR assert abort seen with the
-        # master snapshot (#7). Camera redirection is a build option, enabled
-        # via config-opts.
-        tag: 3.32.1
-        commit: bf217a504e54cc719880c228e82353382cd7d4fa
-      # Backport of FreeRDP PR #13569 (merged to master 2026-10-02, not yet in
-      # a release). 3.32.1 only knows the "text/plain" clipboard format, but on
-      # XWayland the local clipboard is announced as UTF8_STRING /
-      # text/plain;charset=utf-8, so local → remote paste stored the text as
-      # CF_RAW and failed with "No synthesizer for format CF_RAW". Drop these
-      # once the pinned FreeRDP tag includes #13569.
+        # FreeRDP 3.32.2. Besides the pulse hot-unplug + rdpsnd busy-loop
+        # fixes (PR #13334), the rdpecam stream-drain LED fix (3.32.0), the
+        # rdpecam media-type validation fix (249d74364a) that makes V4L camera
+        # redirection work, and the cliprdr fixes (#13496, #13527) that stop
+        # the WinPR assert abort (#7), it includes the XWayland local → remote
+        # clipboard support (#13569) and its follow-ups that we used to carry
+        # as patches: the escape-decoder hang on text like "C:\users" (#13616)
+        # and the synthesized-string size fix (e0931b4af9) — without that, the
+        # converted text was sent without its terminating null and Windows
+        # dropped the last character of every paste. Camera redirection is a
+        # build option, enabled via config-opts.
+        tag: 3.32.2
+        commit: 97eff6ddfbbfaa8e42a126d362686bd001ff8bdc
+      # 3.32.2 counts the terminating '\0' in synthesized text (needed on the
+      # wire), and the SDL client passed it on to local applications, so text
+      # copied from the cloud PC pasted with a stray character at the end.
+      # Upstream as FreeRDP#13705 (not merged yet); drop once the pinned tag
+      # includes it.
       - type: patch
         paths:
-          - patches/freerdp-0001-crt-unicode-add-internal-utf8-to-from-utf-escaped-st.patch
-          - patches/freerdp-0002-winpr-clipboard-implement-text-plain-codepage-utf-.patch
-          - patches/freerdp-0003-winpr-clipboard-add-attributes-malloc-and-nodiscar.patch
-          - patches/freerdp-0004-winpr-clipboard-Add-ClipboardRegisterSynthesizerEx.patch
-          - patches/freerdp-0005-client-x11-distinguish-between-text-plain-and.patch
-          - patches/freerdp-0006-client-sdl-support-text-plain-charset-utf-8.patch
-          # Fixes a hang in 0001 on text like "C:\users"; upstream as FreeRDP#13616 (not merged yet)
-          - patches/freerdp-0007-winpr-crt-fix-endless-loop-in-winpr_utfEscapedStrin.patch
+          - patches/freerdp-0001-client-sdl-strip-terminating-null-from-local-text.patch
 
   # ---- the app itself ----------------------------------------------------
   - name: avd-feed-connect
