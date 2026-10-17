@@ -917,18 +917,35 @@ class AvdApp(Gtk.Application):
             self._error(str(e))
             self._set_tile_state(res["id"], "● Failed", "state-ended")
             return
-        # Host pools not set up for Entra ID RDP auth (their feed .rdp lacks
-        # "enablerdsaadauth:i:1") reject /sec:aad with HYBRID_REQUIRED_BY_SERVER
-        # (issue #3), so use /sec:nla there and let FreeRDP prompt for the account
-        # credentials itself. NLA against a pure Entra-joined host still can't
-        # succeed from Linux (PKU2U needs the Windows CloudAP/PRT), but a
-        # hybrid-AD-joined host works with on-prem-AD credentials. The gateway
-        # keeps using the Entra token either way.
+        # Pick the session-host auth mode. Entra-auth host pools use the token
+        # path (/sec:aad); classic/hybrid pools use NLA (/sec:nla) and let
+        # FreeRDP prompt for the account credentials. Getting this wrong fails
+        # the connect either way: a non-Entra host rejects /sec:aad with
+        # HYBRID_REQUIRED_BY_SERVER (issue #3), while an Entra host rejects NLA
+        # with RDSTLS LOGON_FAILURE 0x52E (issue #38) — NLA can't satisfy an
+        # Entra logon from Linux (PKU2U needs the Windows CloudAP/PRT). A
+        # hybrid-AD-joined host works with on-prem-AD credentials over NLA. The
+        # gateway keeps using the Entra token in all cases.
+        #
+        # A feed advertises Entra auth in more than one way: explicitly with
+        # "enablerdsaadauth:i:1", via an Entra-joined target
+        # ("targetisaadjoined:i:1"), or simply by carrying the session tenant
+        # ("aadtenantid:s:<guid>") — issue #38's feed only had the last, so
+        # matching enablerdsaadauth alone mis-picked NLA. AVD_SEC=aad|nla (or the
+        # per-resource "sec" setting) forces the mode when detection is wrong.
         try:
             rdp_text = open(path).read()
         except OSError:
             rdp_text = ""
-        nla = "enablerdsaadauth:i:1" not in rdp_text.lower()
+        text = rdp_text.lower()
+        sec = os.environ.get("AVD_SEC", "").strip().lower() \
+            or self._eff("sec", res)
+        if sec in ("aad", "nla"):
+            nla = sec == "nla"
+        else:
+            nla = not ("enablerdsaadauth:i:1" in text
+                       or "targetisaadjoined:i:1" in text
+                       or "aadtenantid:s:" in text)
         env = dict(os.environ)
         # sdl-freerdp (SDL3) and FreeRDP's own AAD webview are unstable on native
         # Wayland (#2: "Error 71 dispatching to Wayland display"). Force X11 /
