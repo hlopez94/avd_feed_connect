@@ -448,3 +448,29 @@ Flatpak install. Contributions welcome.
 
 MIT for this app's code. Bundled components keep their own licenses (FreeRDP:
 Apache-2.0, SDL: Zlib).
+
+### UI translations
+
+Select **Settings → Language** to use the system language or choose English,
+Latin American Spanish, Spain Spanish, or Argentina Spanish. Changes are saved
+and applied immediately, including open settings and tray menus. System selection
+uses `LANGUAGE` (first preference), then `LC_ALL`, `LC_MESSAGES`, and `LANG`;
+`C`/`POSIX` message locales always use English. Latin American Spanish locales
+map to `es-419`; unsupported languages and regions use English.
+
+English strings stay in Python source. UTF-8 JSON catalogs in
+`src/avd_feed_connect/locales/` use the English string as their key. `es.json`
+is deliberately shared by all three Spanish variants; regional files contain
+only wording overrides. A missing or empty translation falls back to the
+English source. Keep named `{placeholders}`, newlines and technical identifiers
+intact. The supported languages use singular for one and plural otherwise.
+To add or update translations, edit those catalogs and validate with:
+
+```sh
+python -m pytest tests/test_i18n.py
+python -m pip wheel --no-deps .
+```
+
+The catalog tests check source coverage and placeholder consistency. Setuptools
+includes catalogs as package data; the Flatpak manifest copies the entire
+Python package, including these catalogs, without a separate compilation step.

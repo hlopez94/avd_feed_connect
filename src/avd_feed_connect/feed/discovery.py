@@ -16,6 +16,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 from .. import config, http
+from ..i18n import _ as tr
 
 
 def _tag(el):
@@ -43,12 +44,11 @@ class FeedClient:
         st, _, body = http.get(config.DISCOVERY, token, config.ACCEPT_DISCOVERY)
         _save_raw("00_feeddiscovery.xml", body)
         if st != 200:
-            sys.exit(f"feeddiscovery failed ({st}): {body[:400]}")
+            sys.exit(tr("Feed discovery failed ({status}): {details}").format(status=st, details=body[:400]))
         disc = ET.fromstring(body)
         feeds = [dict(el.attrib) for el in disc.iter() if _tag(el) == "TenantFeedURL"]
         if not feeds:
-            sys.exit("no TenantFeedURL entries — account may have no AVD assignments.\n"
-                     "raw discovery response:\n" + body[:800])
+            sys.exit(tr("No TenantFeedURL entries — account may have no AVD assignments.\nRaw discovery response:\n{details}").format(details=body[:800]))
         resources = []
         for fi, feed in enumerate(feeds):
             url = feed.get("FeedURL")

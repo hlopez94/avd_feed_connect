@@ -6,16 +6,17 @@ import re
 import sys
 
 from .. import config, http
+from ..i18n import _ as tr
 
 
 def download_rdp(token, res, output_dir=None):
     """Fetch resource ``res``'s .rdp text and write it under the feed data dir,
     returning the path. ``res`` is a resource dict from the feed."""
     if not res["rdp_url"]:
-        sys.exit(f"resource {res['title']!r} has no ResourceFile URL")
+        sys.exit(tr("Resource {resource} has no ResourceFile URL").format(resource=repr(res["title"])))
     st, _, rdp = http.get(res["rdp_url"], token)
     if st != 200:
-        sys.exit(f"rdp download failed ({st}): {rdp[:300]}")
+        sys.exit(tr("RDP download failed ({status}): {details}").format(status=st, details=rdp[:300]))
     directory = output_dir or config.OUT
     os.makedirs(directory, mode=0o700, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", res["title"])[:80]

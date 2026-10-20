@@ -1,0 +1,61 @@
+"""Explicit GTK text bindings, leaving server/account text untouched."""
+from gi.repository import Gtk
+
+from ..i18n import Message, on_language_changed
+
+# GObject weak refs follow native widget lifetime, unlike Python weak refs:
+# PyGObject can discard/recreate a Python wrapper while its widget stays alive.
+_widgets = []
+_models = []
+_dropdowns = []
+
+
+def bind(widget, property_name, value):
+    properties = getattr(widget, '_translation_bindings', None)
+    if properties is None:
+        properties = widget._translation_bindings = {}
+        _widgets.append(widget.weak_ref())
+    if isinstance(value, Message):
+        properties[property_name] = value
+        value = value.render()
+    else:
+        properties.pop(property_name, None)
+    getattr(widget, 'set_' + property_name)(value)
+
+
+def create(widget_type, **properties):
+    widget = widget_type(**{key: value.render() if isinstance(value, Message) else value
+                            for key, value in properties.items()})
+    messages = {key: value for key, value in properties.items() if isinstance(value, Message)}
+    if isinstance(widget, Gtk.DropDown):
+        _dropdowns.append(widget.weak_ref())
+    if messages:
+        widget._translation_bindings = messages
+        _widgets.append(widget.weak_ref())
+    return widget
+
+
+def strings(labels):
+    model = Gtk.StringList.new([str(label) for label in labels])
+    model._translation_labels = labels
+    _models.append(model.weak_ref())
+    return model
+
+
+def _alive(references):
+    references[:] = [reference for reference in references if reference() is not None]
+    return [reference() for reference in references]
+
+
+def refresh_bindings():
+    for widget in _alive(_widgets):
+        for name, message in widget._translation_bindings.items():
+            getattr(widget, 'set_' + name)(message.render())
+    selections = [(dropdown, dropdown.get_selected()) for dropdown in _alive(_dropdowns)]
+    for model in _alive(_models):
+        model.splice(0, model.get_n_items(), [str(label) for label in model._translation_labels])
+    for dropdown, selected in selections:
+        dropdown.set_selected(selected)
+
+
+on_language_changed(refresh_bindings)

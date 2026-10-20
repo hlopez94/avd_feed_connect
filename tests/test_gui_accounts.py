@@ -319,3 +319,70 @@ def test_touch_on_main_content_dismisses_open_menu(app, menu_name):
     app._on_menu_outside_pressed(None, 1, 20, app.win.get_height() - 20)
     drain()
     assert not popover.get_visible()
+
+
+
+def test_language_selection_applies_live_and_preserves_sessions(app):
+    from avd_feed_connect import i18n
+    def descendants(widget):
+        yield widget
+        child = widget.get_first_child()
+        while child:
+            yield from descendants(child)
+            child = child.get_next_sibling()
+    widgets = list(descendants(app.win))
+    dropdown = next(w for w in widgets if isinstance(w, Gtk.DropDown)
+                    and w.get_model().get_string(0) == 'System default')
+    owner = add_saved(app, 'fictional', 'alex@example.test')
+    app._select_account(owner.id)
+    owner.resources = [{'id': 'desk', 'title': 'Save', 'tenant': 'Northstar', 'type': 'Desktop'}]
+    app._populate(owner.resources, owner)
+    tile = owner.tiles['desk']
+    from types import SimpleNamespace
+    process = SimpleNamespace(poll=lambda: None)
+    tile._proc = process
+    tray = SimpleNamespace()
+    tray.set_menu = lambda menu: setattr(tray, "menu", menu)
+    tray.set_tooltip = lambda tooltip: setattr(tray, "tooltip", tooltip)
+    app._tray = tray
+    app._sessions[(owner.id, "desk")] = "connected"
+    app._set_status(i18n._('Connected to {resource}').format(resource='Save'), owner)
+    app._open_settings(None)
+    dialog = next(w for w in Gtk.Window.get_toplevels()
+                  if w.get_title() == 'Default connection settings')
+    connection_dropdown = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown))
+    connection_dropdown.set_selected(3)
+    unsaved_flags = next(w for w in descendants(dialog) if isinstance(w, Gtk.Entry)
+                         and w.get_placeholder_text().startswith("advanced:"))
+    unsaved_flags.set_text("/gfx /network:auto")
+    app._edit_account_name(owner)
+    alias_dialog = next(w for w in Gtk.Window.get_toplevels() if w.get_title() == "Edit account name")
+    alias_entry = next(w for w in descendants(alias_dialog) if isinstance(w, Gtk.Entry))
+    alias_entry.set_text("Unsaved company name")
+    for selection, language, expected in [(2, 'es-419', 'Conectado a Save'),
+                                           (3, 'es-ES', 'Conectado a Save'),
+                                           (4, 'es-AR', 'Conectado a Save'),
+                                           (1, 'en', 'Connected to Save')]:
+        dropdown.set_selected(selection)
+        drain()
+        assert gui.storage.load_settings()['_language'] == language
+        assert app.status.get_text() == expected
+        assert owner.tiles['desk'] is tile and tile._proc is process
+        assert app.current is owner
+        assert tray.menu[-1]['label'] == ('Quit' if language == 'en' else 'Salir')
+        assert str(tray.tooltip) == ('1 session connected' if language == 'en' else '1 sesión conectada')
+        assert app._sessions[(owner.id, 'desk')] == 'connected'
+        assert connection_dropdown.get_selected() == 3
+        assert unsaved_flags.get_text() == '/gfx /network:auto'
+        assert alias_entry.get_text() == 'Unsaved company name'
+        assert alias_dialog.get_title() == ('Edit account name' if language == 'en' else 'Editar nombre de la cuenta')
+        assert any(isinstance(w, Gtk.Label) and w.get_text() == 'Save'
+                   for w in descendants(tile))  # resource title must never be translated
+        assert dialog.get_title() == ('Default connection settings' if language == 'en'
+                                      else 'Configuración de conexión predeterminada')
+        assert any(isinstance(w, Gtk.Button) and w.get_label() ==
+                   ('Save' if language == 'en' else 'Guardar') for w in descendants(dialog))
+    alias_dialog.destroy()
+    dialog.destroy()
+    tile._proc = None
+    app._tray = None

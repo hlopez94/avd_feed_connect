@@ -8,6 +8,7 @@ import shutil
 import sys
 import uuid
 
+from .i18n import _ as tr
 from . import config
 from .auth.tokens import TokenStore
 from .client import AvdClient
@@ -15,7 +16,7 @@ from .client import AvdClient
 
 def profile_dir(root, profile_id):
     if not isinstance(profile_id, str) or not re.fullmatch(r'[0-9a-f]{32}', profile_id):
-        raise ValueError('Invalid account profile ID')
+        raise ValueError(tr('Invalid account profile ID'))
     return os.path.join(root, 'accounts', profile_id)
 
 
@@ -39,7 +40,7 @@ def claims_from_token(tok):
                     if isinstance(claims.get(k), str) and claims[k]), '')
         return {'tid': claims['tid'], 'oid': claims['oid'], 'upn': upn}
     except (KeyError, IndexError, ValueError, TypeError, AttributeError) as error:
-        raise ValueError('Microsoft did not return a stable work-account identity. Please sign in again.') from error
+        raise ValueError(tr('Microsoft did not return a stable work-account identity. Please sign in again.')) from error
 
 
 class ProfileRegistry:
@@ -54,14 +55,14 @@ class ProfileRegistry:
             with open(self.path) as source:
                 data = json.load(source)
             if not isinstance(data, dict) or not isinstance(data.get('profiles'), list):
-                raise ValueError('Invalid saved account registry')
+                raise ValueError(tr('Invalid saved account registry'))
             profiles = data['profiles']
             for profile in profiles:
                 if not isinstance(profile, dict):
-                    raise ValueError('Invalid saved account')
+                    raise ValueError(tr('Invalid saved account'))
                 profile_dir(self.root, profile['id'])
                 if not all(isinstance(profile.get(k), str) for k in ('tid', 'oid', 'upn')):
-                    raise ValueError('Invalid saved account')
+                    raise ValueError(tr('Invalid saved account'))
             selected_id = data.get('selected_id')
             if not isinstance(selected_id, str) or selected_id not in {p['id'] for p in profiles}:
                 selected_id = profiles[0]['id'] if profiles else None
@@ -85,19 +86,19 @@ class ProfileRegistry:
 
     def save(self):
         if self._load_error is not None:
-            raise OSError('Cannot overwrite an unreadable or unpreserved account registry') from self._load_error
+            raise OSError(tr('Cannot overwrite an unreadable or unpreserved account registry')) from self._load_error
         write_json(self.path, {'profiles': self.profiles, 'selected_id': self.selected_id,
                                'migration_pending': self.migration_pending})
 
     def select(self, profile_id):
         if profile_id not in {p['id'] for p in self.profiles}:
-            raise ValueError('Unknown account')
+            raise ValueError(tr('Unknown account'))
         self.selected_id = profile_id
         self.save()
 
     def upsert(self, claims, profile_id=None):
         if not claims.get('tid') or not claims.get('oid'):
-            raise ValueError('Missing account identity')
+            raise ValueError(tr('Missing account identity'))
         profile = next((p for p in self.profiles
                         if (p['tid'], p['oid']) == (claims['tid'], claims['oid'])), None)
         if profile is None:
@@ -153,7 +154,7 @@ class ProfileRegistry:
         if not destination.has() and record:
             destination.save(record['refresh_token'])
         if not destination.load():
-            raise OSError('Could not verify migrated credentials')
+            raise OSError(tr('Could not verify migrated credentials'))
         upn = ''
         for name in ('workspaces.json', 'icons', 'webview', 'feed'):
             source = os.path.join(self.root, name)

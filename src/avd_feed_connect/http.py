@@ -4,10 +4,12 @@ the authenticated feed/RDP downloads, which need the approved MS user-agent.
 """
 
 import json
+
 import urllib.error
 import urllib.parse
 import urllib.request
 
+from .i18n import _ as tr
 from . import config
 
 
@@ -15,7 +17,7 @@ def check_trusted(url):
     """Refuse to attach a bearer token to a non-Microsoft or non-https URL."""
     if not config.is_trusted_url(url):
         host = urllib.parse.urlparse(url).hostname
-        raise ValueError(f"refusing to send token to untrusted URL (host: {host})")
+        raise ValueError(tr("Refusing to send token to untrusted URL (host: {host})").format(host=host))
 
 
 def post(url, data):
