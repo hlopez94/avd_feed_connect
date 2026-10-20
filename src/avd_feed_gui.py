@@ -284,7 +284,7 @@ class AvdApp(Gtk.Application):
                     self._error("Could not save account name: " + str(error))
                     return
                 self._rebuild_account_menu()
-                if self._visible(session):
+                if session is self.current:
                     self._update_account(session.client.upn)
                 self._tray_refresh()
                 if self.view_mode == "all":

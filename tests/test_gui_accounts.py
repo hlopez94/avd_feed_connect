@@ -479,3 +479,24 @@ def test_unified_headings_and_mode_buttons_follow_theme(app):
         assert (color.red > .8) if dark else (color.red < .3)
         assert app._view_buttons['all'].get_active()
         assert not app._view_buttons['account'].get_active()
+
+
+def test_renaming_other_unified_account_keeps_selected_header_identity(app, monkeypatch):
+    a = add_saved(app, 'a', 'alice.north@example.com')
+    b = add_saved(app, 'b', 'ben.south@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    assert app._avatar_lbl.get_text() == 'AN'
+    updates = []
+    update = app._update_account
+    monkeypatch.setattr(app, '_update_account', lambda who: (updates.append(who), update(who)))
+    app._edit_account_name(b)
+    dialog = next(w for w in Gtk.Window.list_toplevels()
+                  if w.get_title() == 'Edit account name' and w.get_transient_for() is app.win)
+    entry = dialog.get_child().get_first_child().get_next_sibling()
+    entry.set_text('Fictional South')
+    dialog.get_child().get_last_child().get_last_child().emit('clicked')
+    assert b.display_name == 'Fictional South'
+    assert updates and all(who == a.client.upn for who in updates)
+    assert app._avatar_lbl.get_text() == 'AN'
+    assert app._acct_who.get_text() == a.display_name
