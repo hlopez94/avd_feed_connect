@@ -152,6 +152,8 @@ popover.avd-menu checkbutton:disabled { color:@avd_faint; }
 popover.avd-menu checkbutton check { background:@avd_bg; border-color:@avd_border_strong; }
 popover.avd-menu checkbutton check:checked { background:@avd_accent; color:#ffffff; }
 popover.avd-menu separator { background:@avd_border; }
+.account-name { font-weight:700; }
+.account-email { font-size:11px; color:@avd_muted; }
 .menu-head { font-weight:800; font-size:9px; letter-spacing:0.8px; color:@avd_faint; }
 box.linked > button { min-height:26px; font-size:12px; font-weight:700;
   color:@avd_muted; background:@avd_bg; box-shadow:none; }

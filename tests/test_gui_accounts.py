@@ -84,7 +84,10 @@ def test_account_popover_contains_only_accounts_and_auth_actions(app):
     a = add_saved(app, 'a', 'a@example.com')
     app._select_account(a.id)
     drain()
-    assert labels(app._account_pop.get_child()) == ['✓ a@example.com', 'Add account', 'Sign out']
+    assert labels(app._account_pop.get_child())[-2:] == ['Add account', 'Sign out']
+    text = app._account_rows.get_first_child().get_first_child().get_child()
+    assert text.get_first_child().get_text() == '✓ a'
+    assert text.get_last_child().get_text() == 'a@example.com'
 
 
 def test_switch_and_late_results_preserve_owner_and_process(app):
@@ -231,3 +234,29 @@ def test_connection_settings_follow_theme(app, per_resource):
         assert light.red < 0.3 and light.green < 0.3
     finally:
         dialog.destroy()
+
+
+def test_account_name_editor_saves_and_restores_detected_name(app):
+    owner = add_saved(app, 'a', 'a@example.com')
+    app._select_account(owner.id)
+    for value in ('Custom company', ''):
+        app._edit_account_name(owner)
+        dialog = next(w for w in Gtk.Window.list_toplevels()
+                      if w.get_title() == 'Edit account name' and w.get_transient_for() is app.win)
+        entry = dialog.get_child().get_first_child().get_next_sibling()
+        entry.set_text(value)
+        dialog.get_child().get_last_child().get_last_child().emit('clicked')
+        assert owner.display_name == (value or 'a')
+        text = app._account_rows.get_first_child().get_first_child().get_child()
+        assert text.get_first_child().get_text() == '✓ ' + (value or 'a')
+        assert text.get_last_child().get_text() == 'a@example.com'
+
+
+def test_background_feed_updates_account_name_without_switching(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    b.resources = [dict(b.resources[0], tenant='Updated company')]
+    app._populate(b.resources, b)
+    text = app._account_rows.get_last_child().get_first_child().get_child()
+    assert text.get_first_child().get_text() == 'Updated company'
+    assert app.current is a

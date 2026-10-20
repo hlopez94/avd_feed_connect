@@ -87,6 +87,15 @@ class ProfileRegistry:
         self.save()
         return profile
 
+    def rename(self, profile_id, name):
+        profile = next(p for p in self.profiles if p['id'] == profile_id)
+        name = name.strip()
+        if name:
+            profile['alias'] = name
+        else:
+            profile.pop('alias', None)
+        self.save()
+
     def remove(self, profile_id):
         self.profiles = [p for p in self.profiles if p['id'] != profile_id]
         if self.selected_id == profile_id:

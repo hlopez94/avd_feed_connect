@@ -103,3 +103,15 @@ def test_migration_retries_cleanup_after_legacy_secret_is_gone(tmp_path, monkeyp
     ProfileRegistry(str(tmp_path)).migrate_legacy(legacy)
     assert not (tmp_path / 'workspaces.json').exists()
     assert registry.client().load_token_record()['refresh_token'] == 'secret'
+
+
+def test_account_alias_survives_signin_and_can_be_reset(tmp_path):
+    registry = ProfileRegistry(str(tmp_path))
+    claims = claims_from_token(token())
+    profile = registry.upsert(claims)
+    registry.rename(profile['id'], '  My company  ')
+    registry.upsert(claims)
+    loaded = ProfileRegistry(str(tmp_path))
+    assert loaded.profiles[0]['alias'] == 'My company'
+    loaded.rename(profile['id'], '')
+    assert 'alias' not in ProfileRegistry(str(tmp_path)).profiles[0]

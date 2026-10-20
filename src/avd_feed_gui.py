@@ -206,16 +206,77 @@ class AvdApp(Gtk.Application):
         for session in self.accounts.values():
             if session.removed:
                 continue
-            label = session.client.upn or "Saved account"
-            if session.id == self.selected_id:
-                label = "✓ " + label
-            button = Gtk.Button(label=label)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            button = Gtk.Button()
             button.add_css_class("flat")
+            button.set_hexpand(True)
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            name = session.display_name
+            title = Gtk.Label(label=("✓ " if session.id == self.selected_id else "") + name, xalign=0)
+            title.set_ellipsize(3)
+            title.set_max_width_chars(36)
+            title.add_css_class("account-name")
+            email = Gtk.Label(label=session.client.upn, xalign=0)
+            email.set_ellipsize(3)
+            email.set_max_width_chars(36)
+            email.add_css_class("account-email")
+            text.append(title)
+            text.append(email)
+            button.set_child(text)
             button.connect("clicked", lambda _, sid=session.id: (
                 self._account_pop.popdown(), self._select_account(sid)))
-            self._account_rows.append(button)
+            edit = Gtk.Button.new_from_icon_name("document-edit-symbolic")
+            edit.add_css_class("flat")
+            edit.set_tooltip_text("Edit account name")
+            edit.connect("clicked", lambda _, owner=session: (
+                self._account_pop.popdown(), self._edit_account_name(owner)))
+            row.append(button)
+            row.append(edit)
+            self._account_rows.append(row)
         self._account_separator.set_visible(self._account_rows.get_first_child() is not None)
         self._signout_item.set_sensitive(self.current is not None)
+
+    def _edit_account_name(self, session):
+        if session.removed:
+            return
+        dialog = Gtk.Window(title="Edit account name", transient_for=self.win, modal=True)
+        dialog.add_css_class("avd-settings")
+        dialog.set_default_size(380, -1)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for margin in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{margin}")(16)
+        entry = Gtk.Entry()
+        entry.set_text(session.profile.get('alias', ''))
+        entry.set_placeholder_text(session.display_name)
+        box.append(Gtk.Label(label=session.client.upn, xalign=0))
+        box.append(entry)
+        box.append(Gtk.Label(label="Leave empty to use the detected organization name.",
+                             xalign=0, wrap=True))
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        buttons.set_halign(Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: dialog.destroy())
+        save = Gtk.Button(label="Save")
+        save.add_css_class("suggested-action")
+
+        def apply(*_):
+            if not session.removed:
+                try:
+                    self.registry.rename(session.id, entry.get_text())
+                except OSError as error:
+                    self._error("Could not save account name: " + str(error))
+                    return
+                self._rebuild_account_menu()
+                self._tray_refresh()
+            dialog.destroy()
+
+        save.connect("clicked", apply)
+        entry.connect("activate", apply)
+        buttons.append(cancel)
+        buttons.append(save)
+        box.append(buttons)
+        dialog.set_child(box)
+        dialog.present()
 
     def _add_account(self):
         if self._adding:
@@ -842,7 +903,11 @@ class AvdApp(Gtk.Application):
 
     def _populate(self, resources, session=None):
         session = session or self.current
-        if session is None or not self._visible(session):
+        if session is None or session.removed:
+            return False
+        if not self._visible(session):
+            self._rebuild_account_menu()
+            self._tray_refresh()
             return False
         session.resources = resources
         self._clear_tiles()
@@ -1349,7 +1414,7 @@ class AvdApp(Gtk.Application):
                 states[(session.id, rid)] = {'running': running, 'state': state}
                 if running and rid not in known:
                     resources.append(child._res)
-            accounts.append({'id': session.id, 'upn': session.client.upn,
+            accounts.append({'id': session.id, 'upn': session.display_name,
                              'resources': resources, 'removed': session.removed})
         self._tray.set_menu(tray_menu.build_accounts_menu(accounts, states))
         n = sum(1 for state in states.values() if state['running'])
