@@ -564,3 +564,37 @@ def test_icon_download_reaches_owner_tile_created_while_download_is_pending(app,
     drain()
     assert child._img.get_storage_type() == Gtk.ImageType.PAINTABLE
     assert app._child_for('same', a)._img.get_storage_type() == Gtk.ImageType.ICON_NAME
+
+
+def test_unchanged_feed_retries_missing_icon_after_transient_failure(app, monkeypatch):
+    from types import SimpleNamespace
+    from gi.repository import Gdk
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    b.resources[0]['icon32'] = 'https://icons.example/fictional.png'
+    b.resources.append(dict(b.resources[0], id='cached', icon32='https://icons.example/cached.png'))
+    b.token = 'fictional-b-token'
+    png = Gdk.MemoryTexture.new(1, 1, Gdk.MemoryFormat.R8G8B8A8,
+                               GLib.Bytes.new(bytes([255, 0, 0, 255])), 4).save_to_png_bytes().get_data()
+    calls = []
+
+    def download(url, token):
+        calls.append((url, token))
+        if len(calls) == 1:
+            raise OSError('Temporary fictional network failure')
+        return png
+
+    monkeypatch.setattr(gui.storage, 'bearer_bytes', download)
+    monkeypatch.setattr(app, '_load_icons', gui.AvdApp._load_icons.__get__(app))
+    monkeypatch.setattr(gui.threading, 'Thread', lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: target(*args)))
+    app._populate(b.resources, b)
+    initial = [(b.resources[0]['icon32'], b.token), (b.resources[1]['icon32'], b.token)]
+    assert calls == initial
+    assert not os.path.exists(gui.storage.icon_path('same', b.directory))
+    app._populate(b.resources, b)
+    assert calls == initial + [(b.resources[0]['icon32'], b.token)]
+    assert os.path.exists(gui.storage.icon_path('same', b.directory))
+    app._populate(b.resources, b)
+    app._populate(a.resources, a)
+    assert calls == initial + [(b.resources[0]['icon32'], b.token)]

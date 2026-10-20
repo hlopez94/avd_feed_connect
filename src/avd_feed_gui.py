@@ -1111,10 +1111,14 @@ class AvdApp(Gtk.Application):
         else:
             self._rebuild_account_menu()
             self._tray_refresh()
-        if getattr(session, "_icon_resources", None) != resources:
+        icon_resources = resources
+        if getattr(session, "_icon_resources", None) == resources:
+            icon_resources = [res for res in resources if res.get("icon32") and
+                              not os.path.isfile(storage.icon_path(res["id"], session.directory))]
+        if icon_resources:
             session._icon_resources = [dict(resource) for resource in resources]
-            tiles = [session.tiles[res["id"]] for res in resources if res["id"] in session.tiles]
-            threading.Thread(target=self._load_icons, args=(resources, session, tiles), daemon=True).start()
+            tiles = [session.tiles[res["id"]] for res in icon_resources if res["id"] in session.tiles]
+            threading.Thread(target=self._load_icons, args=(icon_resources, session, tiles), daemon=True).start()
         pending, session.pending_launch = session.pending_launch, None
         if pending:
             child = self._child_for(pending[0], session)
