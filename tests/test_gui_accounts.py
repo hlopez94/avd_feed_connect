@@ -529,3 +529,38 @@ def test_unified_refresh_only_rebuilds_changed_owner_and_fetches_its_icons(app, 
     app._set_view_mode('account')
     app._set_view_mode('all')
     assert not icons
+
+
+def test_icon_download_reaches_owner_tile_created_while_download_is_pending(app, monkeypatch):
+    import threading
+    from gi.repository import Gdk
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    b.resources[0]['icon32'] = 'https://icons.example/fictional.png'
+    b.token = 'fictional-token'
+    started, finish = threading.Event(), threading.Event()
+    png = Gdk.MemoryTexture.new(1, 1, Gdk.MemoryFormat.R8G8B8A8,
+                               GLib.Bytes.new(bytes([255, 0, 0, 255])), 4).save_to_png_bytes().get_data()
+
+    def download(url, token):
+        assert token == b.token
+        started.set()
+        assert finish.wait(3)
+        return png
+
+    monkeypatch.setattr(gui.storage, 'bearer_bytes', download)
+    worker = threading.Thread(target=gui.AvdApp._load_icons, args=(app, b.resources, b, []))
+    worker.start()
+    try:
+        assert started.wait(3)
+        assert not b.tiles
+        app._set_view_mode('all')
+        child = app._child_for('same', b)
+        assert child._img.get_storage_type() == Gtk.ImageType.ICON_NAME
+    finally:
+        finish.set()
+        worker.join(3)
+    assert not worker.is_alive()
+    drain()
+    assert child._img.get_storage_type() == Gtk.ImageType.PAINTABLE
+    assert app._child_for('same', a)._img.get_storage_type() == Gtk.ImageType.ICON_NAME

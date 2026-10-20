@@ -1254,9 +1254,14 @@ class AvdApp(Gtk.Application):
                 tex = Gdk.Texture.new_from_bytes(GLib.Bytes.new(data))
             except Exception:
                 continue
-            ch = children.get(res["id"])
-            if ch:
-                GLib.idle_add(lambda c=ch, t=tex: c._img.set_from_paintable(t) if not session.removed else None)
+            def apply(resource_id=res["id"], texture=tex):
+                if session.removed:
+                    return False
+                child = session.tiles.get(resource_id) or children.get(resource_id)
+                if child is not None and child._account is session:
+                    child._img.set_from_paintable(texture)
+                return False
+            GLib.idle_add(apply)
 
     # ---- launch + live connection state -----------------------------------
     def _on_tile_activated(self, flowbox, child, windowed=False):
