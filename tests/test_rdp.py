@@ -197,3 +197,15 @@ def test_client_hotkeys_auto_and_bad_config_left_alone(tmp_path):
     path.write_text("{not json")
     assert not apply_client_hotkeys("off", str(path))
     assert path.read_text() == "{not json"
+
+
+def test_account_downloads_keep_same_title_resources_separate(tmp_path, monkeypatch):
+    from avd_feed_connect.rdp import resources
+    monkeypatch.setattr(resources.http, 'get', lambda url, token: (200, {}, 'username:s:' + token))
+    a = resources.download_rdp('a', {'id': 'one', 'title': 'Desktop', 'rdp_url': 'https://example.microsoft.com/one'}, str(tmp_path / 'a'))
+    b = resources.download_rdp('b', {'id': 'two', 'title': 'Desktop', 'rdp_url': 'https://example.microsoft.com/two'}, str(tmp_path / 'a'))
+    c = resources.download_rdp('c', {'id': 'one', 'title': 'Desktop', 'rdp_url': 'https://example.microsoft.com/one'}, str(tmp_path / 'b'))
+    assert len({a, b, c}) == 3
+    assert open(a).read() == 'username:s:a'
+    assert open(b).read() == 'username:s:b'
+    assert open(c).read() == 'username:s:c'

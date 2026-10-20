@@ -15,7 +15,8 @@ import os
 import sys
 
 from . import config
-from .client import AvdClient
+from .accounts import ProfileRegistry, profile_dir
+import shutil
 from .feed import print_list
 
 
@@ -35,13 +36,17 @@ def main():
     args = [a for a in args if a != "devicecode"]
     cmd = args[0] if args else "list"
 
+    registry = ProfileRegistry()
+    client = registry.client()
     if cmd == "logout":
-        if os.path.exists(config.CACHE):
-            os.remove(config.CACHE)
+        client.clear_token_cache()
+        if registry.selected_id:
+            directory = profile_dir(registry.root, registry.selected_id)
+            registry.remove(registry.selected_id)
+            shutil.rmtree(directory, ignore_errors=True)
         print("cached refresh token removed.")
         return
 
-    client = AvdClient()
     if cmd == "refresh":
         client.get_token(verbose=True, use_device_code=dev)
         return

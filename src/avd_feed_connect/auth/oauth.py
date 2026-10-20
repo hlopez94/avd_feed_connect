@@ -39,6 +39,7 @@ class OAuthClient:
         # Why the last silent refresh failed (AADSTS code + description), so the
         # GUI can tell the user the real reason instead of "sign in again".
         self.last_refresh_error = ""
+        self.account_identity = None
 
     # -- interactive flows --------------------------------------------------
 
@@ -155,6 +156,17 @@ class OAuthClient:
             pass
         return self.upn
 
+    def _check_account(self, tok, allow_missing_identity=False):
+        if self.account_identity is None:
+            return
+        from ..accounts import claims_from_token
+        if allow_missing_identity and not tok.get("id_token"):
+            # Refresh responses may omit the unchanged identity token.
+            return
+        claims = claims_from_token(tok)
+        if (claims['tid'], claims['oid']) != self.account_identity:
+            raise ValueError("Please sign in with the selected work account.")
+
     def get_token(self, verbose=True, use_device_code=False):
         """Return an access token: silent refresh if a cached refresh token
         works, otherwise an interactive sign-in."""
@@ -163,6 +175,7 @@ class OAuthClient:
             rt = rec["refresh_token"]
             tok = self._refresh(rt)
             if tok:
+                self._check_account(tok, allow_missing_identity=True)
                 self.tokens.save(tok.get("refresh_token", rt))
                 self.set_upn_from_token(tok)
                 if verbose:
@@ -172,6 +185,7 @@ class OAuthClient:
             if verbose:
                 print("cached refresh token invalid, signing in again")
         tok = self._device_code() if use_device_code else self._auth_code()
+        self._check_account(tok)
         self.tokens.save(tok["refresh_token"])
         self.set_upn_from_token(tok)
         if verbose:

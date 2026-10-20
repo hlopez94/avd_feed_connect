@@ -53,3 +53,35 @@ def test_footer_and_empty_feed():
 def test_workspace_falls_back_to_publisher():
     items = build_menu([{"id": "a", "title": "Dev", "tenant": "", "publisher": "Pub"}], {})
     assert items[0]["label"] == "PUB"
+
+
+def test_account_actions_keep_owner_with_identical_resource_ids():
+    from avd_feed_connect.gui.tray_menu import build_accounts_menu
+    accounts = [{'id': 'a', 'upn': 'a@example.com', 'resources': [_res('same', 'Desktop')]},
+                {'id': 'b', 'upn': 'b@example.com', 'resources': [_res('same', 'Desktop')]}]
+    menu = build_accounts_menu(accounts, {('a', 'same'): {'running': True, 'state': 'connected'}})
+    assert menu[0]['label'] == 'a@example.com'
+    assert menu[0]['children'][1]['children'][0]['action'] == ('focus', 'a', 'same')
+    assert menu[1]['children'][1]['children'][0]['action'] == ('connect', 'b', 'same')
+
+
+def test_removed_account_only_offers_running_session_actions():
+    from avd_feed_connect.gui.tray_menu import build_accounts_menu
+    accounts = [{'id': 'a', 'upn': 'old@example.com', 'removed': True,
+                 'resources': [_res('running', 'Running'), _res('idle', 'Idle')]}]
+    menu = build_accounts_menu(accounts, {('a', 'running'): {'running': True, 'state': 'connected'}})
+    assert [r['label'] for r in menu[0]['children']] == ['CONTOSO', '● Running']
+    assert menu[0]['children'][1]['children'][1]['action'] == ('disconnect', 'a', 'running')
+
+
+def test_menu_can_omit_footer_without_truncating_resources():
+    items = build_menu([_res('a', 'Dev'), _res('b', 'Ops')], {}, include_footer=False)
+    assert _labels(items) == ['CONTOSO', 'Dev', 'Ops']
+    assert items[-1]['children'][0]['action'] == ('connect', 'b')
+
+
+def test_empty_menu_without_footer_keeps_placeholder():
+    items = build_menu([], {}, include_footer=False)
+    assert len(items) == 1
+    assert items[0]['label'] == 'No workspaces yet'
+    assert not items[0]['enabled']

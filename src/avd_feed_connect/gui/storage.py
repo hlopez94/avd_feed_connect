@@ -64,8 +64,8 @@ UA_LABELS = ["Automatic", "Microsoft Edge on Windows",
 UA_PRESETS = ["auto", UA_WINDOWS_EDGE, UA_WINDOWS_CHROME]
 
 
-def icon_path(res_id):
-    return os.path.join(ICON_DIR, re.sub(r"[^A-Za-z0-9_.-]", "_", res_id) + ".png")
+def icon_path(res_id, directory=None):
+    return os.path.join(os.path.join(directory, "icons") if directory else ICON_DIR, re.sub(r"[^A-Za-z0-9_.-]", "_", res_id) + ".png")
 
 
 def load_settings():
@@ -85,20 +85,21 @@ def save_settings(d):
         pass
 
 
-def save_ws_cache(resources, upn):
+def save_ws_cache(resources, upn, directory=None):
+    path = os.path.join(directory, "workspaces.json") if directory else WS_CACHE
     try:
-        os.makedirs(os.path.dirname(WS_CACHE), exist_ok=True)
-        with open(WS_CACHE, "w") as f:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
             json.dump({"upn": upn, "resources": resources}, f)
     except OSError:
         pass
 
 
-def load_ws_cache():
+def load_ws_cache(directory=None):
     """Return ``(resources, cached_upn)``. ``cached_upn`` is ``""`` when absent;
     the caller decides whether to adopt it (only when no UPN is set yet)."""
     try:
-        with open(WS_CACHE) as f:
+        with open(os.path.join(directory, "workspaces.json") if directory else WS_CACHE) as f:
             d = json.load(f)
         return d.get("resources") or [], d.get("upn") or ""
     except (OSError, ValueError):

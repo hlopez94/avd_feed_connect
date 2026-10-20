@@ -21,9 +21,10 @@ _SCHEMA_ID = "io.github.shakeelosmani.avd_feed_connect"
 class TokenStore:
     """Persists a single refresh-token record: keyring first, 0600 file fallback."""
 
-    def __init__(self, cache_path=None):
+    def __init__(self, cache_path=None, account_id=None):
         self._cache = cache_path or config.CACHE
         self._schema = None  # lazily built libsecret schema
+        self.account_id = account_id
 
     # -- keyring (libsecret) ------------------------------------------------
 
@@ -39,7 +40,7 @@ class TokenStore:
             self._schema = Secret.Schema.new(
                 _SCHEMA_ID, Secret.SchemaFlags.NONE,
                 {"attr": Secret.SchemaAttributeType.STRING})
-        return Secret, self._schema, {"attr": "token-cache"}
+        return Secret, self._schema, {"attr": "token-cache" if self.account_id is None else "account-" + self.account_id}
 
     def _keyring_store(self, record_json):
         s = self._secret()
@@ -83,7 +84,7 @@ class TokenStore:
             pass
 
     def _file_store(self, record):
-        os.makedirs(os.path.dirname(self._cache), exist_ok=True)  # XDG dir may not exist yet
+        os.makedirs(os.path.dirname(self._cache), mode=0o700, exist_ok=True)  # XDG dir may not exist yet
         tmp = self._cache + ".tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
