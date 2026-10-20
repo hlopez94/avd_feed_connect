@@ -24,6 +24,8 @@ def _bridge_available():
 class WorkspacePlacement:
     """One bounded, asynchronous placement attempt per successful launch."""
 
+    MAX_ATTEMPTS = 60
+
     def __init__(self, proc, title):
         self.proc = proc
         self.title = title
@@ -37,7 +39,7 @@ class WorkspacePlacement:
         return False
 
     def _try_place(self):
-        if self.proc.poll() is not None or self.attempts >= 60:
+        if self.proc.poll() is not None or self.attempts >= self.MAX_ATTEMPTS:
             return False
         self.attempts += 1
         try:
@@ -58,7 +60,7 @@ class WorkspacePlacement:
         # Keep a bounded grace period after first placement for other monitor
         # windows mapping later. Shell placement is idempotent and does not
         # activate the workspace again unless a new session window appears.
-        if self.proc.poll() is None and self.attempts < 60:
+        if self.proc.poll() is None and self.attempts < self.MAX_ATTEMPTS:
             GLib.timeout_add(250, self._try_place)
 
 
