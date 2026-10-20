@@ -1624,8 +1624,8 @@ class AvdApp(Gtk.Application):
         hk_dd.set_selected(storage.HOTKEY_VALUES.index(hv) if hv in storage.HOTKEY_VALUES else 0)
         box.append(self._form_row("Client shortcuts", hk_dd))
 
-        workspace_values = ["auto", "on", "off"] if res else ["off", "on"]
-        workspace_labels = ["Use Default settings", "Enabled", "Disabled"] if res else ["Disabled", "Enabled"]
+        workspace_values = storage.WORKSPACE_VALUES if res else storage.WORKSPACE_DEFAULT_VALUES
+        workspace_labels = storage.WORKSPACE_LABELS if res else storage.WORKSPACE_DEFAULT_LABELS
         workspace_dd = Gtk.DropDown(model=Gtk.StringList.new(workspace_labels))
         workspace_value = cur.get("new_workspace", "auto" if res else "off")
         workspace_dd.set_selected(workspace_values.index(workspace_value) if workspace_value in workspace_values else 0)
