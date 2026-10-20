@@ -183,3 +183,26 @@ def test_sign_out_does_not_break_reader_when_log_directory_disappears(app):
     assert child._launching is False
     with pytest.raises(OSError):
         os.read(master, 1)
+
+
+def test_account_list_separator_is_hidden_until_accounts_exist(app):
+    separator = app._account_rows.get_next_sibling()
+    assert isinstance(separator, Gtk.Separator)
+    assert not separator.get_visible()
+    a = add_saved(app, 'a', 'a@example.com')
+    app._select_account(a.id)
+    assert separator.get_visible()
+    app._sign_out()
+    assert not separator.get_visible()
+
+
+def test_popover_actions_follow_selected_theme(app):
+    button = app._account_rows.get_next_sibling().get_next_sibling()
+    app._set_theme('dark')
+    drain()
+    dark = button.get_style_context().get_color()
+    assert dark.red > 0.8 and dark.green > 0.8
+    app._set_theme('light')
+    drain()
+    light = button.get_style_context().get_color()
+    assert light.red < 0.3 and light.green < 0.3

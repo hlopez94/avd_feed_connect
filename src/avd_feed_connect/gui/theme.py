@@ -58,9 +58,9 @@ headerbar.avd-header .titlebutton:hover { color:@avd_ink; background:alpha(@avd_
   box-shadow:0 3px 8px -2px alpha(#0E7CF4,0.55); }
 .brand-title { font-weight:800; font-size:15px; color:@avd_ink; }
 .brand-sub { font-size:11px; color:@avd_faint; }
-button.iconbtn { border-radius:9px; color:@avd_muted; background:none;
+button.iconbtn, menubutton.iconbtn > button { border-radius:9px; color:@avd_muted; background:none;
   border:1px solid transparent; min-width:34px; min-height:34px; box-shadow:none; padding:0; }
-button.iconbtn:hover { background:@avd_bg; color:@avd_ink; border-color:@avd_border; }
+button.iconbtn:hover, menubutton.iconbtn > button:hover { background:@avd_bg; color:@avd_ink; border-color:@avd_border; }
 /* the class sits on the menubutton; style its inner button (else it keeps the
    theme's default light background and the email text vanishes in dark mode) */
 menubutton.acct-btn { background:none; box-shadow:none; }
@@ -126,6 +126,18 @@ button.msbtn:hover { background:@avd_accent_ink; }
 .settings-title { font-weight:800; font-size:17px; color:@avd_ink; }
 .settings-sub { font-size:12px; color:@avd_muted; }
 .field-label { font-weight:800; font-size:11px; letter-spacing:0.6px; color:@avd_muted; }
+/* Popovers have their own surfaces; explicitly share the app palette. */
+popover.avd-menu > contents { background:@avd_surface; color:@avd_ink;
+  border:1px solid @avd_border; }
+popover.avd-menu arrow { background:@avd_surface; border-color:@avd_border; }
+popover.avd-menu button.flat { color:@avd_ink; background:none; box-shadow:none; }
+popover.avd-menu button.flat:hover { background:@avd_surface2; }
+popover.avd-menu button.flat:disabled { color:@avd_faint; }
+popover.avd-menu checkbutton { color:@avd_muted; }
+popover.avd-menu checkbutton:disabled { color:@avd_faint; }
+popover.avd-menu checkbutton check { background:@avd_bg; border-color:@avd_border_strong; }
+popover.avd-menu checkbutton check:checked { background:@avd_accent; color:#ffffff; }
+popover.avd-menu separator { background:@avd_border; }
 .menu-head { font-weight:800; font-size:9px; letter-spacing:0.8px; color:@avd_faint; }
 box.linked > button { min-height:26px; font-size:12px; font-weight:700;
   color:@avd_muted; background:@avd_bg; box-shadow:none; }

@@ -214,6 +214,7 @@ class AvdApp(Gtk.Application):
             button.connect("clicked", lambda _, sid=session.id: (
                 self._account_pop.popdown(), self._select_account(sid)))
             self._account_rows.append(button)
+        self._account_separator.set_visible(self._account_rows.get_first_child() is not None)
         self._signout_item.set_sensitive(self.current is not None)
 
     def _add_account(self):
@@ -385,6 +386,7 @@ class AvdApp(Gtk.Application):
         pbox.append(setbtn)
         pbox.append(Gtk.Separator())
         settings_pop = pop
+        settings_pop.add_css_class("avd-menu")
         self._settings_pop = settings_pop
         settings_btn = Gtk.MenuButton(icon_name="emblem-system-symbolic")
         settings_btn.add_css_class("iconbtn")
@@ -393,12 +395,14 @@ class AvdApp(Gtk.Application):
         settings_btn.set_popover(settings_pop)
         pop = Gtk.Popover()
         self._account_pop = pop
+        pop.add_css_class("avd-menu")
         pbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         for margin in ("top", "bottom", "start", "end"):
             getattr(pbox, f"set_margin_{margin}")(6)
         self._account_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         pbox.append(self._account_rows)
-        pbox.append(Gtk.Separator())
+        self._account_separator = Gtk.Separator()
+        pbox.append(self._account_separator)
         add = Gtk.Button(label="Add account")
         add.add_css_class("flat")
         add.connect("clicked", lambda *_: (pop.popdown(), self._add_account()))
