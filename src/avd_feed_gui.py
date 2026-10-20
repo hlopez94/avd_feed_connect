@@ -73,7 +73,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from avd_feed_connect import config, http  # noqa: E402
 from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
-from avd_feed_connect.gui.workspaces import select_backend as workspace_backend
+from avd_feed_connect.gui.workspaces import select_backend as workspace_backend  # noqa: E402
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
     apply_client_hotkeys, build_display_args)
 from avd_feed_connect.gui.theme import CSS_BASE, PALETTE_DARK, PALETTE_LIGHT  # noqa: E402
