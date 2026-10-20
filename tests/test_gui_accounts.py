@@ -400,7 +400,7 @@ def test_unified_alias_workspace_groups_and_refresh_are_independent(app, monkeyp
     assert len(app._tiles) == 3
     calls = []
     monkeypatch.setattr(app, '_interactive_signin', lambda owner: calls.append(owner.id))
-    row = app._resource_box.get_last_child().get_prev_sibling().get_prev_sibling()
+    row = app._account_sections[b.id].get_first_child().get_next_sibling()
     # Activate the actual affected-account button, not the selected account.
     row.get_last_child().emit('clicked')
     assert calls == [b.id]
@@ -471,7 +471,7 @@ def test_unified_headings_and_mode_buttons_follow_theme(app):
     app._set_view_mode('all')
     app.win.present()
     drain()
-    heading = app._resource_box.get_first_child()
+    heading = app._account_sections[a.id].get_first_child()
     for theme, dark in [('dark', True), ('light', False)]:
         app._set_theme(theme)
         drain()
@@ -500,3 +500,32 @@ def test_renaming_other_unified_account_keeps_selected_header_identity(app, monk
     assert updates and all(who == a.client.upn for who in updates)
     assert app._avatar_lbl.get_text() == 'AN'
     assert app._acct_who.get_text() == a.display_name
+
+
+def test_unified_refresh_only_rebuilds_changed_owner_and_fetches_its_icons(app, monkeypatch):
+    from types import SimpleNamespace
+    owners = [add_saved(app, str(i), f'person{i}@example.com') for i in range(3)]
+    monkeypatch.setattr(gui.threading, 'Thread', lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: target(*args)))
+    app._select_account(owners[0].id)
+    app._set_view_mode('all')
+    icons = []
+    monkeypatch.setattr(app, '_load_icons', lambda resources, owner, tiles: icons.append(owner.id))
+    untouched_parent = app._child_for('same', owners[1]).get_parent()
+    changed = [dict(owners[0].resources[0], title='Updated resource')]
+    app._populate(changed, owners[0])
+    assert app._child_for('same', owners[1]).get_parent() is untouched_parent
+    assert icons == [owners[0].id]
+    icons.clear()
+    section = app._account_sections[owners[0].id]
+    app._set_status('Sign in again to refresh', owners[0], reauth=True)
+    drain()
+    app._populate(changed, owners[0])
+    assert not app._account_status_widgets[owners[0].id][1].get_visible()
+    assert app._account_sections[owners[0].id] is section
+    assert app._resource_box.get_first_child() is section
+    assert section.get_next_sibling() is app._account_sections[owners[1].id]
+    assert not icons
+    app._set_view_mode('account')
+    app._set_view_mode('all')
+    assert not icons
