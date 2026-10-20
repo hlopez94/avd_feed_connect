@@ -269,3 +269,34 @@ def test_header_displays_alias_and_keeps_email_in_selector(app):
     assert app._acct_who.get_text() == 'Tessitura Network'
     text = app._account_rows.get_first_child().get_first_child().get_child()
     assert text.get_last_child().get_text() == 'a@example.com'
+
+
+@pytest.mark.parametrize('menu_name', ['_account_pop', '_settings_pop'])
+def test_menu_closes_when_parent_window_loses_activation(app, menu_name, monkeypatch):
+    app.win.present()
+    drain()
+    popover = getattr(app, menu_name)
+    # Disable GTK's outside-click dismissal to exercise the independent
+    # activation cleanup needed when a touch interaction misses dismissal.
+    popover.set_autohide(False)
+    popover.popup()
+    drain()
+    assert popover.get_visible()
+    monkeypatch.setattr(app.win, 'is_active', lambda: False)
+    app.win.notify('is-active')
+    drain()
+    assert not popover.get_visible()
+
+
+@pytest.mark.parametrize('menu_name', ['_account_pop', '_settings_pop'])
+def test_menu_stays_open_while_parent_window_is_active(app, menu_name, monkeypatch):
+    app.win.present()
+    drain()
+    popover = getattr(app, menu_name)
+    popover.set_autohide(False)
+    popover.popup()
+    drain()
+    monkeypatch.setattr(app.win, 'is_active', lambda: True)
+    app.win.notify('is-active')
+    drain()
+    assert popover.get_visible()

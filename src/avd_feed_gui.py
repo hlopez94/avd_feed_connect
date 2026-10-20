@@ -367,6 +367,7 @@ class AvdApp(Gtk.Application):
         self.win.add_css_class("avd")
         self.win.set_default_size(820, 600)
         self.win.connect("close-request", self._on_close_request)
+        self.win.connect("notify::is-active", self._on_window_active_changed)
 
         # ---- header bar: brand (left) · refresh + account (right) -----------
         hb = Gtk.HeaderBar()
@@ -578,6 +579,14 @@ class AvdApp(Gtk.Application):
         self.stack.set_visible_child_name("busy")
 
     # ---- helpers (main thread) --------------------------------------------
+    def _on_window_active_changed(self, window, _property):
+        """Dismiss touch-opened menus when their parent loses activation."""
+        if not window.is_active():
+            for name in ("_account_pop", "_settings_pop"):
+                popover = getattr(self, name, None)
+                if popover is not None:
+                    popover.popdown()
+
     def _set_status(self, text, session=None):
         GLib.idle_add(lambda: self.status.set_text(text) if self.status and (session is None or self._visible(session)) else None)
 
