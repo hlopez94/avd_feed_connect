@@ -53,9 +53,9 @@ expires your token) is usually a single click rather than a full password+MFA.
 
 Open the avatar/email menu and choose **Add account** to sign in to another
 company. The same menu lists saved accounts; choosing one displays its
-workspaces. Each entry shows the organization name above the account email.
+workspaces. Each entry shows a custom account name, or the email domain, above the account email.
 Use the pencil button to set a local display name; leaving it empty restores
-the detected name. Existing remote desktop connections stay open when you switch.
+the email domain. Existing remote desktop connections stay open when you switch.
 The tray groups workspaces by account and supports connecting, focusing, and
 disconnecting sessions independently of the account shown in the window.
 

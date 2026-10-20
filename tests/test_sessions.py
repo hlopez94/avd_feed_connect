@@ -62,14 +62,14 @@ def test_network_failure_is_reported_without_losing_saved_account(tmp_path, monk
     assert owner.client.load_token_record()['refresh_token'] == 'keep'
 
 
-def test_display_name_prefers_alias_then_matching_tenant_then_email(tmp_path, monkeypatch):
+def test_display_name_prefers_alias_then_email_domain_not_workspace(tmp_path, monkeypatch):
     owner = session(tmp_path, monkeypatch)
-    assert owner.display_name == 'user@example.com'
+    assert owner.display_name == 'example.com'
     owner.resources = [{'tenant_id': 't', 'tenant': 'Tessitura Network'},
                        {'tenant_id': 'other', 'tenant': 'Other company'}]
-    assert owner.display_name == 'Tessitura Network'
+    assert owner.display_name == 'example.com'
     owner.profile['alias'] = 'My work'
     assert owner.display_name == 'My work'
     owner.profile.pop('alias')
     owner.resources = [{'tenant': 'First'}, {'tenant': 'Second'}]
-    assert owner.display_name == 'user@example.com'
+    assert owner.display_name == 'example.com'

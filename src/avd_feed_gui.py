@@ -250,7 +250,7 @@ class AvdApp(Gtk.Application):
         entry.set_placeholder_text(session.display_name)
         box.append(Gtk.Label(label=session.client.upn, xalign=0))
         box.append(entry)
-        box.append(Gtk.Label(label="Leave empty to use the detected organization name.",
+        box.append(Gtk.Label(label="Leave empty to use the email domain.",
                              xalign=0, wrap=True))
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         buttons.set_halign(Gtk.Align.END)

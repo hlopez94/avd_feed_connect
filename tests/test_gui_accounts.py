@@ -86,7 +86,7 @@ def test_account_popover_contains_only_accounts_and_auth_actions(app):
     drain()
     assert labels(app._account_pop.get_child())[-2:] == ['Add account', 'Sign out']
     text = app._account_rows.get_first_child().get_first_child().get_child()
-    assert text.get_first_child().get_text() == '✓ a'
+    assert text.get_first_child().get_text() == '✓ example.com'
     assert text.get_last_child().get_text() == 'a@example.com'
 
 
@@ -246,17 +246,17 @@ def test_account_name_editor_saves_and_restores_detected_name(app):
         entry = dialog.get_child().get_first_child().get_next_sibling()
         entry.set_text(value)
         dialog.get_child().get_last_child().get_last_child().emit('clicked')
-        assert owner.display_name == (value or 'a')
+        assert owner.display_name == (value or 'example.com')
         text = app._account_rows.get_first_child().get_first_child().get_child()
-        assert text.get_first_child().get_text() == '✓ ' + (value or 'a')
+        assert text.get_first_child().get_text() == '✓ ' + (value or 'example.com')
         assert text.get_last_child().get_text() == 'a@example.com'
 
 
-def test_background_feed_updates_account_name_without_switching(app):
+def test_background_workspace_name_does_not_replace_account_domain(app):
     a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
     app._select_account(a.id)
     b.resources = [dict(b.resources[0], tenant='Updated company')]
     app._populate(b.resources, b)
     text = app._account_rows.get_last_child().get_first_child().get_child()
-    assert text.get_first_child().get_text() == 'Updated company'
+    assert text.get_first_child().get_text() == 'example.com'
     assert app.current is a

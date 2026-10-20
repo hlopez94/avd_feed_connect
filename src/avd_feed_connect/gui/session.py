@@ -38,12 +38,10 @@ class AccountSession:
     def display_name(self):
         if self.profile.get('alias'):
             return self.profile['alias']
-        matching = {r['tenant'] for r in self.resources if r.get('tenant') and
-                    r.get('tenant_id') == self.profile['tid']}
-        names = matching or {r['tenant'] for r in self.resources if r.get('tenant')}
-        if len(names) == 1:
-            return next(iter(names))
-        return self.client.upn or "Saved account"
+        # AVD TenantDisplayName can be a workspace/Cloud PC name, not an
+        # organization name. Only the user-supplied alias names the company.
+        domain = self.client.upn.partition('@')[2]
+        return domain or self.client.upn or "Saved account"
 
     def apply_token(self, tok):
         with self.refresh_lock:
