@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import uuid
 
 from . import config
@@ -48,22 +49,43 @@ class ProfileRegistry:
         self.profiles = []
         self.selected_id = None
         self.migration_pending = False
+        self._load_error = None
         try:
             with open(self.path) as source:
                 data = json.load(source)
-            for profile in data['profiles']:
+            if not isinstance(data, dict) or not isinstance(data.get('profiles'), list):
+                raise ValueError('Invalid saved account registry')
+            profiles = data['profiles']
+            for profile in profiles:
+                if not isinstance(profile, dict):
+                    raise ValueError('Invalid saved account')
                 profile_dir(self.root, profile['id'])
                 if not all(isinstance(profile.get(k), str) for k in ('tid', 'oid', 'upn')):
                     raise ValueError('Invalid saved account')
+            selected_id = data.get('selected_id')
+            if not isinstance(selected_id, str) or selected_id not in {p['id'] for p in profiles}:
+                selected_id = profiles[0]['id'] if profiles else None
             self.migration_pending = bool(data.get('migration_pending'))
-            self.profiles = data['profiles']
-            self.selected_id = data.get('selected_id')
-            if self.selected_id not in {p['id'] for p in self.profiles}:
-                self.selected_id = self.profiles[0]['id'] if self.profiles else None
+            self.profiles = profiles
+            self.selected_id = selected_id
         except FileNotFoundError:
             pass
+        except (ValueError, KeyError, TypeError):
+            # Preserve the original bytes before allowing a fresh registry.
+            backup = self.path + '.invalid-' + uuid.uuid4().hex
+            try:
+                os.replace(self.path, backup)
+                print(f'Invalid account registry preserved at {backup}', file=sys.stderr)
+            except OSError as backup_error:
+                self._load_error = backup_error
+                print('Could not preserve the invalid account registry; saving is disabled.', file=sys.stderr)
+        except OSError as error:
+            self._load_error = error
+            print('Could not read the account registry; saving is disabled.', file=sys.stderr)
 
     def save(self):
+        if self._load_error is not None:
+            raise OSError('Cannot overwrite an unreadable or unpreserved account registry') from self._load_error
         write_json(self.path, {'profiles': self.profiles, 'selected_id': self.selected_id,
                                'migration_pending': self.migration_pending})
 

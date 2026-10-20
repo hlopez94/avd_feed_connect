@@ -1502,8 +1502,8 @@ class AvdApp(Gtk.Application):
 
     # ---- per-resource settings -------------------------------------------
     def _eff(self, key, res, session=None):
-        session = session or self.current
         """Resolve a setting: per-resource value → global default → None(=auto)."""
+        session = session or self.current
         rv = (session.resource_settings if session else {}).get(res["id"], {}).get(key, "auto")
         if rv and rv != "auto":
             return rv

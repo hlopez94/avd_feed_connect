@@ -115,3 +115,51 @@ def test_account_alias_survives_signin_and_can_be_reset(tmp_path):
     assert loaded.profiles[0]['alias'] == 'My company'
     loaded.rename(profile['id'], '')
     assert 'alias' not in ProfileRegistry(str(tmp_path)).profiles[0]
+
+
+@pytest.mark.parametrize('content', [
+    '{broken', '{}', 'null', '[]', '{"profiles":null}',
+    '{"profiles":[{}]}', '{"profiles":[null]}',
+    '{"profiles":[{"id":"../escape","tid":"t","oid":"o","upn":"u"}]}',
+])
+def test_invalid_registry_preserves_original_and_allows_clean_start(tmp_path, content):
+    path = tmp_path / 'accounts.json'
+    path.write_text(content)
+    registry = ProfileRegistry(str(tmp_path))
+    assert registry.profiles == []
+    assert registry.selected_id is None
+    assert registry.migration_pending is False
+    backups = list(tmp_path.glob('accounts.json.invalid-*'))
+    assert len(backups) == 1
+    assert backups[0].read_text() == content
+    profile = registry.upsert(claims_from_token(token()))
+    assert ProfileRegistry(str(tmp_path)).selected_id == profile['id']
+    assert backups[0].read_text() == content
+
+
+def test_invalid_registry_does_not_adopt_partially_valid_profiles(tmp_path):
+    good = {'id': 'a' * 32, 'tid': 't', 'oid': 'o', 'upn': 'u'}
+    (tmp_path / 'accounts.json').write_text(json.dumps({'profiles': [good, {}]}))
+    registry = ProfileRegistry(str(tmp_path))
+    assert registry.profiles == []
+    assert registry.selected_id is None
+
+
+def test_registry_is_not_overwritten_when_backup_fails(tmp_path, monkeypatch):
+    import avd_feed_connect.accounts as accounts
+    path = tmp_path / 'accounts.json'
+    path.write_text('{broken')
+    def denied(*args):
+        raise PermissionError('Cannot preserve registry')
+    monkeypatch.setattr(accounts.os, 'replace', denied)
+    registry = ProfileRegistry(str(tmp_path))
+    assert registry.profiles == []
+    with pytest.raises(OSError, match='Cannot overwrite'):
+        registry.save()
+    assert path.read_text() == '{broken'
+
+
+def test_missing_registry_does_not_create_a_backup(tmp_path):
+    registry = ProfileRegistry(str(tmp_path))
+    assert registry.profiles == []
+    assert list(tmp_path.iterdir()) == []
