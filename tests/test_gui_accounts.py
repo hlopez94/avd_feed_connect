@@ -34,6 +34,8 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv('AVD_DEMO', '1')
     monkeypatch.setattr(gui.config, 'CACHE', str(tmp_path / 'token-cache.json'))
     monkeypatch.setattr(gui.storage, 'SETTINGS_FILE', str(tmp_path / 'settings.json'))
+    # Keep general UI assertions independent of the host's language.
+    gui.storage.save_settings({'_language': 'en'})
     monkeypatch.setattr(gui.TokenStore, '_keyring_store', lambda *a: False)
     monkeypatch.setattr(gui.TokenStore, '_keyring_load', lambda *a: None)
     monkeypatch.setattr(gui.TokenStore, '_keyring_clear', lambda *a: None)
