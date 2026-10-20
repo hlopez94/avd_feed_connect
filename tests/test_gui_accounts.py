@@ -319,3 +319,47 @@ def test_touch_on_main_content_dismisses_open_menu(app, menu_name):
     app._on_menu_outside_pressed(None, 1, 20, app.win.get_height() - 20)
     drain()
     assert not popover.get_visible()
+
+
+def test_workspace_defaults_and_resource_off_persist(app):
+    owner = add_saved(app, 'demo', 'alex@example.test')
+    app.selected_id = owner.id
+    resource = owner.resources[0]
+    app._settings['_default'] = {'new_workspace': 'on'}
+    assert app._eff('new_workspace', resource, owner) == 'on'
+    app._open_settings(resource, owner)
+    drain()
+    dialog = next(w for w in Gtk.Window.get_toplevels() if w.get_title().startswith('Settings —'))
+    widgets = []
+    def visit(widget):
+        widgets.append(widget)
+        child = widget.get_first_child()
+        while child:
+            visit(child)
+            child = child.get_next_sibling()
+    visit(dialog)
+    dropdown = next(w for w in widgets if isinstance(w, Gtk.DropDown)
+                    and w.get_model().get_string(0) == 'Use Default settings')
+    assert dropdown.get_selected() == 0
+    dropdown.set_selected(2)
+    next(w for w in widgets if isinstance(w, Gtk.Button) and w.get_label() == 'Save').emit('clicked')
+    assert owner.resource_settings[resource['id']]['new_workspace'] == 'off'
+    assert app._eff('new_workspace', resource, owner) == 'off'
+
+
+def test_workspace_placement_only_on_first_logon(app):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    placement = Mock()
+    placement.start.return_value = False
+    child = SimpleNamespace(_workspace_placement=placement)
+    owner = add_saved(app, 'demo', 'alex@example.test')
+    resource = owner.resources[0]
+    state = {'connected': False}
+    app._on_freerdp_line(child, resource, -1, 'Connection failed', state, owner)
+    drain()
+    placement.start.assert_not_called()
+    for _ in range(2):
+        app._on_freerdp_line(child, resource, -1, 'Logon Info', state, owner)
+    drain()
+    placement.start.assert_called_once()

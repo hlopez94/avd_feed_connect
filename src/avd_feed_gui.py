@@ -73,6 +73,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from avd_feed_connect import config, http  # noqa: E402
 from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
+from avd_feed_connect.gui.workspaces import WorkspacePlacement, available as workspace_integration_available
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
     apply_client_hotkeys, build_display_args)
 from avd_feed_connect.gui.theme import CSS_BASE, PALETTE_DARK, PALETTE_LIGHT  # noqa: E402
@@ -1230,6 +1231,14 @@ class AvdApp(Gtk.Application):
             self._set_tile_state(res["id"], "● Failed", "state-ended", session)
             self._error(f"Could not prepare display settings: {error}")
             return
+        workspace_title = None
+        if res.get("type") == "Desktop" and self._eff("new_workspace", res, session) == "on" \
+                and workspace_integration_available():
+            import uuid
+            workspace_title = "AVD-" + uuid.uuid4().hex
+            # Last option wins over any custom /t flag. No resource/account data
+            # enters the Shell bridge; the random title also works across PID namespaces.
+            argv.append("/t:" + workspace_title)
         # Launch under a PTY. With FreeRDP built WITHOUT its own AAD webview,
         # /sec:aad prints "Browse to: <url>" and reads the redirect URL back
         # from stdin — but only when it thinks it's attached to a terminal, so
@@ -1256,6 +1265,7 @@ class AvdApp(Gtk.Application):
                 return
             finally:
                 os.close(slave)
+        child._workspace_placement = WorkspacePlacement(proc, workspace_title) if workspace_title else None
         child._proc = proc
         child._ptym = master
         GLib.idle_add(self._tray_refresh)    # Focus/Disconnect now apply
@@ -1316,6 +1326,9 @@ class AvdApp(Gtk.Application):
         """Handle one line of FreeRDP output (called from the reader thread)."""
         if not state["connected"] and "Logon Info" in line:
             state["connected"] = True
+            placement = getattr(child, "_workspace_placement", None)
+            if placement:
+                GLib.idle_add(placement.start)
             self._set_tile_state(res["id"], "● Connected", "state-connected", session)
             self._set_status(f"Connected to {res['title']}", session)
             self._set_connecting(res["id"], res["title"], False, session)  # desktop is up
@@ -1611,6 +1624,17 @@ class AvdApp(Gtk.Application):
         hk_dd.set_selected(storage.HOTKEY_VALUES.index(hv) if hv in storage.HOTKEY_VALUES else 0)
         box.append(self._form_row("Client shortcuts", hk_dd))
 
+        workspace_values = ["auto", "on", "off"] if res else ["off", "on"]
+        workspace_labels = ["Use Default settings", "Enabled", "Disabled"] if res else ["Disabled", "Enabled"]
+        workspace_dd = Gtk.DropDown(model=Gtk.StringList.new(workspace_labels))
+        workspace_value = cur.get("new_workspace", "auto" if res else "off")
+        workspace_dd.set_selected(workspace_values.index(workspace_value) if workspace_value in workspace_values else 0)
+        workspace_dd.set_sensitive(res is None or res.get("type") == "Desktop")
+        box.append(self._form_row("Start connection in a new virtual desktop", workspace_dd))
+        workspace_note = Gtk.Label(label="Desktop connections only. Requires the optional GNOME extension; switches to the new workspace when connected.", xalign=0, wrap=True)
+        workspace_note.add_css_class("tile-sub")
+        box.append(workspace_note)
+
         # Sign-in browser identity (User-Agent). Lets a tenant that blocks Linux
         # at sign-in via Conditional Access be satisfied by posing as Edge/Chrome
         # on Windows (issue #28). Stored value is the literal UA string; "Custom…"
@@ -1662,6 +1686,7 @@ class AvdApp(Gtk.Application):
                 "multimon": storage.MULTIMON_VALUES[mm_dd.get_selected()],
                 "cert": storage.CERT_VALUES[cert_dd.get_selected()],
                 "hotkeys": storage.HOTKEY_VALUES[hk_dd.get_selected()],
+                "new_workspace": workspace_values[workspace_dd.get_selected()],
                 "extra_args": extra_entry.get_text().strip(),
             }
             if ua_dd is not None:   # Default settings only; account-wide (issue #28)
@@ -1673,6 +1698,7 @@ class AvdApp(Gtk.Application):
             # drop an all-default entry so the file stays tidy
             if entry["scale"] == "auto" and entry["multimon"] == "auto" \
                     and entry["cert"] == "auto" and entry["hotkeys"] == "auto" \
+                    and entry["new_workspace"] == ("auto" if res else "off") \
                     and entry.get("user_agent", "auto") == "auto" \
                     and not entry["extra_args"]:
                 settings.pop(key, None)

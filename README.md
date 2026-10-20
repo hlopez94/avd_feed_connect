@@ -448,3 +448,31 @@ Flatpak install. Contributions welcome.
 
 MIT for this app's code. Bundled components keep their own licenses (FreeRDP:
 Apache-2.0, SDL: Zlib).
+
+### Optional GNOME connection workspaces
+
+In **Default settings**, enable **Start connection in a new virtual desktop** to
+place desktop connections in separate GNOME workspaces. A resource's settings
+can inherit the default, enable it, or disable it. Remote apps are unaffected.
+The app switches to the session's workspace after successful logon. The default
+is disabled; without the companion extension, connections open normally.
+
+GNOME Wayland requires the small companion Shell extension in
+`gnome-extension/avd-workspaces@avd-feed-connect` (GNOME Shell 50). To install it
+manually from a source checkout, copy that directory into
+`~/.local/share/gnome-shell/extensions/`, log out and back in, then enable
+**AVD connection workspaces** in GNOME Extensions. Installation and enablement
+are explicit user actions; the app never performs either automatically.
+The Flatpak manifest includes permission for the extension's dedicated D-Bus
+name. Existing installations need a build containing that permission.
+
+Placement uses an exact random FreeRDP window title rather than resource names
+or sandbox PIDs. It waits briefly for the desktop window after logon, reuses an
+empty trailing workspace when available, and otherwise appends one. Reconnects
+and focus actions reuse the session; failed launches create no workspace.
+No global workspace settings are changed and no workspace is deleted: GNOME
+reclaims empty dynamic workspaces normally; with fixed workspaces, an existing
+empty workspace is reserved, or placement falls back to the current workspace
+if none is available. The configured number of workspaces is preserved. On secondary monitors GNOME's existing
+“Workspaces on primary display only” preference still applies. Display hotplug
+windows created later by FreeRDP are outside the initial placement attempt.
