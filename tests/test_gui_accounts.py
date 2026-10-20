@@ -598,3 +598,25 @@ def test_unchanged_feed_retries_missing_icon_after_transient_failure(app, monkey
     app._populate(b.resources, b)
     app._populate(a.resources, a)
     assert calls == initial + [(b.resources[0]['icon32'], b.token)]
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_unchanged_account_refresh_restores_page_and_clears_stale_status(app, monkeypatch, empty):
+    owner = add_saved(app, 'a', 'alice@example.com')
+    if empty:
+        owner.resources = []
+    app._select_account(owner.id)
+    app._populate(owner.resources, owner)
+    section = app._account_sections[owner.id]
+    icons = []
+    monkeypatch.setattr(app, '_load_icons', lambda *args: icons.append(args))
+    app._set_status('Could not refresh — showing saved resources', owner, reauth=True)
+    app._show('busy', owner)
+    drain()
+    assert app.stack.get_visible_child_name() == 'busy'
+    app._populate(owner.resources, owner)
+    assert app.stack.get_visible_child_name() == 'workspaces'
+    assert app.status.get_text() == 'Signed in as alice@example.com'
+    assert not owner.needs_signin
+    assert app._account_sections[owner.id] is section
+    assert not icons

@@ -1108,6 +1108,9 @@ class AvdApp(Gtk.Application):
                     widgets[0].set_text("" if resources else "No resources available")
                     widgets[1].set_visible(False)
                     widgets[0].get_parent().set_visible(not resources)
+                self.stack.set_visible_child_name("workspaces")
+                self.status.set_text("All accounts" if self.view_mode == "all" else
+                                     f"Signed in as {session.client.upn}")
         else:
             self._rebuild_account_menu()
             self._tray_refresh()
