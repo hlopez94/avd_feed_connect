@@ -300,3 +300,22 @@ def test_menu_stays_open_while_parent_window_is_active(app, menu_name, monkeypat
     app.win.notify('is-active')
     drain()
     assert popover.get_visible()
+
+
+@pytest.mark.parametrize('menu_name', ['_account_pop', '_settings_pop'])
+def test_menu_does_not_take_an_autohide_input_grab(app, menu_name):
+    assert not getattr(app, menu_name).get_autohide()
+
+
+@pytest.mark.parametrize('menu_name', ['_account_pop', '_settings_pop'])
+def test_touch_on_main_content_dismisses_open_menu(app, menu_name):
+    app.win.present()
+    drain()
+    popover = getattr(app, menu_name)
+    popover.set_autohide(False)
+    popover.popup()
+    drain()
+    assert popover.get_visible()
+    app._on_menu_outside_pressed(None, 1, 20, app.win.get_height() - 20)
+    drain()
+    assert not popover.get_visible()

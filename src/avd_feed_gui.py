@@ -368,6 +368,10 @@ class AvdApp(Gtk.Application):
         self.win.set_default_size(820, 600)
         self.win.connect("close-request", self._on_close_request)
         self.win.connect("notify::is-active", self._on_window_active_changed)
+        outside = Gtk.GestureClick()
+        outside.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        outside.connect("pressed", self._on_menu_outside_pressed)
+        self.win.add_controller(outside)
 
         # ---- header bar: brand (left) · refresh + account (right) -----------
         hb = Gtk.HeaderBar()
@@ -404,7 +408,9 @@ class AvdApp(Gtk.Application):
         acctbox.append(self._avatar_lbl); acctbox.append(self._acct_who); acctbox.append(caret)
         menu_btn.set_child(acctbox)
 
-        pop = Gtk.Popover()
+        # Avoid an input grab that can deactivate the parent on touch input.
+        # Outside presses and parent deactivation dismiss these menus explicitly.
+        pop = Gtk.Popover(autohide=False)
         pbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         for m in ("top", "bottom", "start", "end"):
             getattr(pbox, f"set_margin_{m}")(6)
@@ -456,7 +462,9 @@ class AvdApp(Gtk.Application):
         settings_btn.set_tooltip_text("Settings")
         settings_pop.set_child(pbox)
         settings_btn.set_popover(settings_pop)
-        pop = Gtk.Popover()
+        # Avoid an input grab that can deactivate the parent on touch input.
+        # Outside presses and parent deactivation dismiss these menus explicitly.
+        pop = Gtk.Popover(autohide=False)
         self._account_pop = pop
         pop.add_css_class("avd-menu")
         pbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -579,13 +587,25 @@ class AvdApp(Gtk.Application):
         self.stack.set_visible_child_name("busy")
 
     # ---- helpers (main thread) --------------------------------------------
+    def _dismiss_menus(self):
+        for name in ("_account_pop", "_settings_pop"):
+            popover = getattr(self, name, None)
+            if popover is not None:
+                popover.popdown()
+
+    def _on_menu_outside_pressed(self, _gesture, _count, x, y):
+        target = self.win.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while target is not None:
+            # Let menu items and the menu buttons handle their own interaction.
+            if isinstance(target, (Gtk.Popover, Gtk.MenuButton)):
+                return
+            target = target.get_parent()
+        self._dismiss_menus()
+
     def _on_window_active_changed(self, window, _property):
-        """Dismiss touch-opened menus when their parent loses activation."""
+        """Dismiss menus when their non-grabbing parent loses activation."""
         if not window.is_active():
-            for name in ("_account_pop", "_settings_pop"):
-                popover = getattr(self, name, None)
-                if popover is not None:
-                    popover.popdown()
+            self._dismiss_menus()
 
     def _set_status(self, text, session=None):
         GLib.idle_add(lambda: self.status.set_text(text) if self.status and (session is None or self._visible(session)) else None)
