@@ -72,3 +72,16 @@ def test_removed_account_only_offers_running_session_actions():
     menu = build_accounts_menu(accounts, {('a', 'running'): {'running': True, 'state': 'connected'}})
     assert [r['label'] for r in menu[0]['children']] == ['CONTOSO', '● Running']
     assert menu[0]['children'][1]['children'][1]['action'] == ('disconnect', 'a', 'running')
+
+
+def test_menu_can_omit_footer_without_truncating_resources():
+    items = build_menu([_res('a', 'Dev'), _res('b', 'Ops')], {}, include_footer=False)
+    assert _labels(items) == ['CONTOSO', 'Dev', 'Ops']
+    assert items[-1]['children'][0]['action'] == ('connect', 'b')
+
+
+def test_empty_menu_without_footer_keeps_placeholder():
+    items = build_menu([], {}, include_footer=False)
+    assert len(items) == 1
+    assert items[0]['label'] == 'No workspaces yet'
+    assert not items[0]['enabled']

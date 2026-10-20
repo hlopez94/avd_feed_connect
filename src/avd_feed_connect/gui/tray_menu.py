@@ -37,9 +37,10 @@ def _resource_item(res, session):
     return item(MARKERS.get(state, "") + res["title"], children=children)
 
 
-def build_menu(resources, sessions):
+def build_menu(resources, sessions, *, include_footer=True):
     """Menu for ``resources`` (feed dicts, in grid order). ``sessions`` maps a
-    resource id to {"state": "idle"|"connecting"|"connected", "running": bool}."""
+    resource id to {"state": "idle"|"connecting"|"connected", "running": bool}.
+    Set ``include_footer=False`` when embedding workspace groups in a submenu."""
     groups = {}
     for res in resources:
         groups.setdefault(workspace_name(res), []).append(res)
@@ -49,10 +50,11 @@ def build_menu(resources, sessions):
     for name, members in groups.items():
         items.append(item(name.upper(), enabled=False))
         items += [_resource_item(r, sessions.get(r["id"], {})) for r in members]
-    items += [SEPARATOR,
-              item("Refresh", ("refresh",)),
-              item("Show window", ("show",)),
-              item("Quit", ("quit",))]
+    if include_footer:
+        items += [SEPARATOR,
+                  item("Refresh", ("refresh",)),
+                  item("Show window", ("show",)),
+                  item("Quit", ("quit",))]
     return items
 
 
@@ -67,7 +69,7 @@ def build_accounts_menu(accounts, sessions):
         if not resources and account.get('removed'):
             continue
         states = {r['id']: sessions.get((aid, r['id']), {}) for r in resources}
-        children = build_menu(resources, states)[:-4]
+        children = build_menu(resources, states, include_footer=False)
         for group in children:
             for action in group.get('children', []):
                 if action.get('action'):
