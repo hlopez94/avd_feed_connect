@@ -451,11 +451,15 @@ Apache-2.0, SDL: Zlib).
 
 ### Optional GNOME connection workspaces
 
-In **Default settings**, enable **Start connection in a new virtual desktop** to
+On GNOME, in **Default settings**, enable **Start connection in a new virtual desktop** to
 place desktop connections in separate GNOME workspaces. A resource's settings
 can inherit the default, enable it, or disable it. Remote apps are unaffected.
 The app switches to the session's workspace after successful logon. The default
-is disabled; without the companion extension, connections open normally.
+is disabled; without the companion extension, connections open normally. The
+option is hidden on other desktops, and saved enabled preferences do not invoke
+GNOME integration there. Backend selection is separate from the preference and
+launch lifecycle so future desktop integrations can supply their own capabilities;
+this release implements only GNOME. No generic Wayland support is assumed.
 
 GNOME Wayland requires the small companion Shell extension in
 `gnome-extension/avd-workspaces@avd-feed-connect` (GNOME Shell 50). To install it

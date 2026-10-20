@@ -321,7 +321,8 @@ def test_touch_on_main_content_dismisses_open_menu(app, menu_name):
     assert not popover.get_visible()
 
 
-def test_workspace_defaults_and_resource_off_persist(app):
+def test_workspace_defaults_and_resource_off_persist(app, monkeypatch):
+    monkeypatch.setenv('XDG_CURRENT_DESKTOP', 'GNOME')
     owner = add_saved(app, 'demo', 'alex@example.test')
     app.selected_id = owner.id
     resource = owner.resources[0]
@@ -363,3 +364,32 @@ def test_workspace_placement_only_on_first_logon(app):
         app._on_freerdp_line(child, resource, -1, 'Logon Info', state, owner)
     drain()
     placement.start.assert_called_once()
+
+
+@pytest.mark.parametrize('resource_settings', [False, True])
+def test_workspace_setting_hidden_outside_gnome(app, monkeypatch, resource_settings):
+    monkeypatch.setenv('XDG_CURRENT_DESKTOP', 'KDE')
+    monkeypatch.setenv('XDG_SESSION_DESKTOP', 'gnome')
+    owner = add_saved(app, 'demo', 'alex@example.test')
+    app.selected_id = owner.id
+    resource = owner.resources[0]
+    app._settings['_default'] = {'new_workspace': 'on'}
+    assert app._eff('new_workspace', resource, owner) == 'on'
+    assert gui.workspace_backend() is None
+    app._open_settings(resource if resource_settings else None, owner)
+    drain()
+    dialog = next(w for w in Gtk.Window.get_toplevels() if w != app.win)
+    labels = []
+    def visit(w):
+        if isinstance(w, Gtk.Label):
+            labels.append(w)
+        child = w.get_first_child()
+        while child:
+            visit(child)
+            child = child.get_next_sibling()
+    visit(dialog)
+    label = next(w for w in labels if w.get_text() == 'Start connection in a new virtual desktop')
+    assert not label.get_parent().get_visible()
+    note = next(w for w in labels if 'Requires the optional GNOME extension' in w.get_text())
+    assert not note.get_visible()
+    dialog.destroy()

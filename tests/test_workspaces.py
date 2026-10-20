@@ -60,6 +60,7 @@ def test_window_map_race_and_late_monitor_grace(monkeypatch):
 
 
 def test_availability_requires_running_bridge(monkeypatch):
+    monkeypatch.setenv('XDG_CURRENT_DESKTOP', 'GNOME')
     connection = Mock()
     monkeypatch.setattr(workspaces.Gio, 'bus_get_sync', lambda *args: connection)
     for present in (False, True):
@@ -67,3 +68,27 @@ def test_availability_requires_running_bridge(monkeypatch):
         assert workspaces.available() is present
     connection.call_sync.side_effect = GLib.Error('Permission denied')
     assert workspaces.available() is False
+
+
+@pytest.mark.parametrize('environ,expected', [
+    ({'XDG_CURRENT_DESKTOP': 'GNOME'}, True),
+    ({'XDG_CURRENT_DESKTOP': 'ubuntu:GNOME'}, True),
+    ({'XDG_CURRENT_DESKTOP': 'GNOME-Classic:GNOME'}, True),
+    ({'XDG_SESSION_DESKTOP': 'gnome-xorg'}, True),
+    ({'DESKTOP_SESSION': 'gnome'}, True),
+    ({'XDG_CURRENT_DESKTOP': 'KDE', 'XDG_SESSION_DESKTOP': 'gnome'}, False),
+    ({'XDG_CURRENT_DESKTOP': 'sway', 'DESKTOP_SESSION': 'gnome'}, False),
+    ({'XDG_CURRENT_DESKTOP': 'X-Cinnamon'}, False),
+    ({}, False),
+])
+def test_desktop_detection(environ, expected):
+    assert workspaces.current_desktop_is_gnome(environ) is expected
+    assert (workspaces.select_backend(environ) is not None) is expected
+
+
+def test_non_gnome_never_probes_shell_even_if_preference_saved(monkeypatch):
+    monkeypatch.setenv('XDG_CURRENT_DESKTOP', 'KDE')
+    probe = Mock()
+    monkeypatch.setattr(workspaces, '_bridge_available', probe)
+    assert workspaces.available() is False
+    probe.assert_not_called()

@@ -73,7 +73,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from avd_feed_connect import config, http  # noqa: E402
 from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
-from avd_feed_connect.gui.workspaces import WorkspacePlacement, available as workspace_integration_available
+from avd_feed_connect.gui.workspaces import select_backend as workspace_backend
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
     apply_client_hotkeys, build_display_args)
 from avd_feed_connect.gui.theme import CSS_BASE, PALETTE_DARK, PALETTE_LIGHT  # noqa: E402
@@ -1231,9 +1231,10 @@ class AvdApp(Gtk.Application):
             self._set_tile_state(res["id"], "● Failed", "state-ended", session)
             self._error(f"Could not prepare display settings: {error}")
             return
+        backend = workspace_backend()
         workspace_title = None
         if res.get("type") == "Desktop" and self._eff("new_workspace", res, session) == "on" \
-                and workspace_integration_available():
+                and backend is not None and backend.available():
             import uuid
             workspace_title = "AVD-" + uuid.uuid4().hex
             # Last option wins over any custom /t flag. No resource/account data
@@ -1265,7 +1266,7 @@ class AvdApp(Gtk.Application):
                 return
             finally:
                 os.close(slave)
-        child._workspace_placement = WorkspacePlacement(proc, workspace_title) if workspace_title else None
+        child._workspace_placement = backend.create_placement(proc, workspace_title) if workspace_title else None
         child._proc = proc
         child._ptym = master
         GLib.idle_add(self._tray_refresh)    # Focus/Disconnect now apply
@@ -1630,8 +1631,12 @@ class AvdApp(Gtk.Application):
         workspace_value = cur.get("new_workspace", "auto" if res else "off")
         workspace_dd.set_selected(workspace_values.index(workspace_value) if workspace_value in workspace_values else 0)
         workspace_dd.set_sensitive(res is None or res.get("type") == "Desktop")
-        box.append(self._form_row("Start connection in a new virtual desktop", workspace_dd))
+        workspace_row = self._form_row("Start connection in a new virtual desktop", workspace_dd)
+        workspace_supported = workspace_backend() is not None
+        workspace_row.set_visible(workspace_supported)
+        box.append(workspace_row)
         workspace_note = Gtk.Label(label="Desktop connections only. Requires the optional GNOME extension; switches to the new workspace when connected.", xalign=0, wrap=True)
+        workspace_note.set_visible(workspace_supported)
         workspace_note.add_css_class("tile-sub")
         box.append(workspace_note)
 
