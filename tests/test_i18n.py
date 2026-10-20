@@ -120,3 +120,22 @@ def test_message_retains_source_and_nested_arguments_across_switches():
     assert message.render().startswith('Automático se adapta')
     i18n.configure('unsupported')
     assert message.render() == 'Automatic matches your display and monitors. Applies to your next connection.'
+
+
+def test_regional_catalogs_only_contain_real_overrides():
+    base = json.loads((i18n.CATALOG_DIR / 'es.json').read_text())
+    for region in ('es-419', 'es-ES', 'es-AR'):
+        catalog = json.loads((i18n.CATALOG_DIR / (region + '.json')).read_text())
+        assert all(value != base[key] for key, value in catalog.items())
+
+
+def test_spanish_tray_focus_session_differs_from_show_application():
+    from avd_feed_connect.gui.tray_menu import build_menu
+    i18n.configure('es-419')
+    menu = build_menu([{'id': 'desk', 'title': 'Demo PC', 'tenant': 'Demo'}],
+                      {'desk': {'state': 'connected', 'running': True}})
+    focus = menu[1]['children'][0]
+    show = next(item for item in menu if item.get('action') == ('show',))
+    assert focus['action'] == ('focus', 'desk')
+    assert focus['label'] == 'Enfocar ventana'
+    assert show['label'] == 'Mostrar ventana'

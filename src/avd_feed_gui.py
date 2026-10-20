@@ -174,7 +174,7 @@ class AvdApp(Gtk.Application):
             demo = demo_resources()
             self._populate(demo)
             self._set_status(tr("Signed in as {account}").format(account="alex@contoso.com"))
-            self._set_tile_state("d2", "", "state-connected")
+            self._set_tile_state("d2", "state-connected")
             return
         # If we have previously discovered workspaces, show them immediately and
         # refresh the token + feed silently in the background (Windows-App-style
@@ -1063,7 +1063,7 @@ class AvdApp(Gtk.Application):
         session = session or self.current
         return session.tiles.get(res_id) if session else None
 
-    def _set_tile_state(self, res_id, text, css, session=None):
+    def _set_tile_state(self, res_id, css, session=None):
         session = session or self.current
         if session is None:
             return
@@ -1145,7 +1145,7 @@ class AvdApp(Gtk.Application):
             self._set_status(tr("{resource} is already open").format(resource=res['title']), session)
             return
         child._launching = True
-        self._set_tile_state(res["id"], tr("● Connecting…"), "state-connecting", session)
+        self._set_tile_state(res["id"], "state-connecting", session)
         self._set_status(tr("Connecting to {resource}…").format(resource=res['title']), session)
         self._set_connecting(res["id"], res["title"], True, session)
         threading.Thread(target=self._launch, args=(child, res, windowed, session),
@@ -1158,7 +1158,7 @@ class AvdApp(Gtk.Application):
             # keeping the workspace list intact.
             child._launching = False
             self._set_connecting(res["id"], res["title"], False, session)
-            self._set_tile_state(res["id"], "", None, session)
+            self._set_tile_state(res["id"], None, session)
             self._set_status(tr("Sign in to connect"), session)
             session.pending_launch = (res["id"], windowed)   # connect automatically afterwards
             GLib.idle_add(self._interactive_signin, session)
@@ -1173,7 +1173,7 @@ class AvdApp(Gtk.Application):
             child._launching = False
             self._set_connecting(res["id"], res["title"], False, session)
             self._error(str(e))
-            self._set_tile_state(res["id"], tr("● Failed"), "state-ended", session)
+            self._set_tile_state(res["id"], "state-ended", session)
             return
         # Host pools not set up for Entra ID RDP auth (their feed .rdp lacks
         # "enablerdsaadauth:i:1") reject /sec:aad with HYBRID_REQUIRED_BY_SERVER
@@ -1256,7 +1256,7 @@ class AvdApp(Gtk.Application):
         except (OSError, ValueError) as error:
             child._launching = False
             self._set_connecting(res["id"], res["title"], False, session)
-            self._set_tile_state(res["id"], tr("● Failed"), "state-ended", session)
+            self._set_tile_state(res["id"], "state-ended", session)
             self._error(tr("Could not prepare display settings: {error}").format(error=error))
             return
         # Launch under a PTY. With FreeRDP built WITHOUT its own AAD webview,
@@ -1280,7 +1280,7 @@ class AvdApp(Gtk.Application):
                 os.close(master)
                 child._launching = False
                 self._set_connecting(res["id"], res["title"], False, session)
-                self._set_tile_state(res["id"], "", None, session)
+                self._set_tile_state(res["id"], None, session)
                 self._error(tr("Could not launch FreeRDP: {error}").format(error=error))
                 return
             finally:
@@ -1336,16 +1336,16 @@ class AvdApp(Gtk.Application):
                 pass
         child._launching = False
         self._set_connecting(res["id"], res["title"], False, session)  # ensure overlay clears
-        self._set_tile_state(res["id"], tr("○ Disconnected"), "state-ended", session)
+        self._set_tile_state(res["id"], "state-ended", session)
         self._set_status(tr("{resource} session ended").format(resource=res['title']), session)
         GLib.timeout_add_seconds(
-            6, lambda: (self._set_tile_state(res["id"], "", None, session), False)[1])
+            6, lambda: (self._set_tile_state(res["id"], None, session), False)[1])
 
     def _on_freerdp_line(self, child, res, master, line, state, session):
         """Handle one line of FreeRDP output (called from the reader thread)."""
         if not state["connected"] and "Logon Info" in line:
             state["connected"] = True
-            self._set_tile_state(res["id"], tr("● Connected"), "state-connected", session)
+            self._set_tile_state(res["id"], "state-connected", session)
             self._set_status(tr("Connected to {resource}").format(resource=res['title']), session)
             self._set_connecting(res["id"], res["title"], False, session)  # desktop is up
         if line.startswith("Browse to: "):

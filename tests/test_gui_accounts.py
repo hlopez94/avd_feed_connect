@@ -386,3 +386,25 @@ def test_language_selection_applies_live_and_preserves_sessions(app):
     dialog.destroy()
     tile._proc = None
     app._tray = None
+
+
+def test_tile_state_labels_are_derived_from_state_and_translate_live(app):
+    owner = add_saved(app, 'demo', 'alex@example.test')
+    app._select_account(owner.id)
+    tile = owner.tiles['same']
+    app._set_tile_state('same', 'state-connecting', owner)
+    drain()
+    assert tile._pill.get_visible() and tile._pill.get_text() == 'CONNECTING'
+    app._set_language('es-AR')
+    assert tile._pill.get_text() == 'CONECTANDO'
+    app._set_tile_state('same', 'state-connected', owner)
+    drain()
+    assert tile._pill.get_text() == 'CONECTADO'
+    assert tile._tile.has_css_class('tile-connected')
+    assert app._sessions[(owner.id, 'same')] == 'connected'
+    app._set_tile_state('same', 'state-ended', owner)
+    drain()
+    assert not tile._pill.get_visible()
+    assert not tile._tile.has_css_class('tile-connected')
+    assert (owner.id, 'same') not in app._sessions
+    app._set_language('en')
