@@ -1,5 +1,8 @@
 """Explicit GTK text bindings, leaving server/account text untouched."""
-from gi.repository import Gtk
+import gi
+
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk  # noqa: E402
 
 from ..i18n import Message, on_language_changed
 

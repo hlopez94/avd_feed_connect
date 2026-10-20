@@ -77,8 +77,8 @@ def build_accounts_menu(accounts, sessions):
                 if action.get('action'):
                     kind, rid = action['action']
                     action['action'] = (kind, aid, rid)
-        items.append(item(account['upn'] or _( 'Saved account' ), children=children))
+        items.append(item(account['upn'] or _('Saved account'), children=children))
     if not items:
-        items.append(item(_( 'No workspaces yet' ), enabled=False))
-    return items + [SEPARATOR, item(_( 'Refresh' ), ('refresh',)),
-                    item(_( 'Show window' ), ('show',)), item(_( 'Quit' ), ('quit',))]
+        items.append(item(_('No workspaces yet'), enabled=False))
+    return items + [SEPARATOR, item(_('Refresh'), ('refresh',)),
+                    item(_('Show window'), ('show',)), item(_('Quit'), ('quit',))]

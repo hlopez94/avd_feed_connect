@@ -30,9 +30,6 @@ Runtime: PyGObject with Gtk 4.0, WebKit 6.0 (all in the GNOME 51 Flatpak
 runtime).
 """
 
-from avd_feed_connect.gui.localization import bind, create, strings
-from avd_feed_connect.i18n import _ as tr, ngettext, configure, LANGUAGES
-
 import json
 import os
 import re as _re
@@ -78,6 +75,8 @@ from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
     apply_client_hotkeys, build_display_args)
+from avd_feed_connect.i18n import _ as tr, ngettext, configure, LANGUAGES  # noqa: E402
+from avd_feed_connect.gui.localization import bind, create, strings  # noqa: E402
 from avd_feed_connect.gui.theme import CSS_BASE, PALETTE_DARK, PALETTE_LIGHT  # noqa: E402
 from avd_feed_connect.gui.demo import demo_resources  # noqa: E402
 from avd_feed_connect.gui import storage, tray_menu, x11focus  # noqa: E402
