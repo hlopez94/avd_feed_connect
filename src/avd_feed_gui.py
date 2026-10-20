@@ -384,7 +384,6 @@ class AvdApp(Gtk.Application):
         setbtn = Gtk.Button(label="Default settings…"); setbtn.add_css_class("flat")
         setbtn.connect("clicked", lambda *_: (settings_pop.popdown(), self._open_settings(None)))
         pbox.append(setbtn)
-        pbox.append(Gtk.Separator())
         settings_pop = pop
         settings_pop.add_css_class("avd-menu")
         self._settings_pop = settings_pop
@@ -1490,6 +1489,7 @@ class AvdApp(Gtk.Application):
                      if res else "Automatic matches your display and monitors.")
 
         dlg = Gtk.Window(title=title, transient_for=self.win, modal=True)
+        dlg.add_css_class("avd-settings")
         dlg.set_default_size(440, -1)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for m in ("top", "bottom", "start", "end"):

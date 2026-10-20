@@ -123,6 +123,20 @@ button.msbtn { background:@avd_accent; color:#ffffff; font-weight:700; font-size
   box-shadow:0 8px 18px -6px alpha(@avd_accent,0.6); }
 button.msbtn:hover { background:@avd_accent_ink; }
 
+window.avd-settings { background:@avd_surface; color:@avd_ink; }
+window.avd-settings headerbar { background:@avd_surface2; color:@avd_ink;
+  border-color:@avd_border; }
+window.avd-settings label { color:inherit; }
+window.avd-settings button, window.avd-settings entry {
+  background:@avd_bg; color:@avd_ink; border-color:@avd_border_strong; box-shadow:none; }
+window.avd-settings button:hover { background:@avd_surface2; }
+window.avd-settings button.suggested-action { background:@avd_accent; color:#ffffff; }
+window.avd-settings entry > text > placeholder { color:@avd_faint; }
+window.avd-settings popover > contents { background:@avd_surface; color:@avd_ink;
+  border-color:@avd_border; }
+window.avd-settings listview { background:@avd_surface; color:@avd_ink; }
+window.avd-settings listview row:hover { background:@avd_surface2; }
+window.avd-settings listview row:selected { background:@avd_accent; color:#ffffff; }
 .settings-title { font-weight:800; font-size:17px; color:@avd_ink; }
 .settings-sub { font-size:12px; color:@avd_muted; }
 .field-label { font-weight:800; font-size:11px; letter-spacing:0.6px; color:@avd_muted; }

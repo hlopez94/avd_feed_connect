@@ -206,3 +206,28 @@ def test_popover_actions_follow_selected_theme(app):
     drain()
     light = button.get_style_context().get_color()
     assert light.red < 0.3 and light.green < 0.3
+
+
+def test_settings_menu_has_no_trailing_separator(app):
+    assert isinstance(app._settings_pop.get_child().get_last_child(), Gtk.Button)
+
+
+@pytest.mark.parametrize('per_resource', [False, True])
+def test_connection_settings_follow_theme(app, per_resource):
+    owner = add_saved(app, 'a', 'a@example.com')
+    app._select_account(owner.id)
+    app._set_theme('dark')
+    app._open_settings(owner.resources[0] if per_resource else None, owner)
+    dialog = next(w for w in Gtk.Window.list_toplevels()
+                  if w.get_transient_for() is app.win and w.get_modal())
+    try:
+        label = dialog.get_child().get_first_child().get_first_child()
+        drain()
+        dark = label.get_style_context().get_color()
+        assert dark.red > 0.8 and dark.green > 0.8
+        app._set_theme('light')
+        drain()
+        light = label.get_style_context().get_color()
+        assert light.red < 0.3 and light.green < 0.3
+    finally:
+        dialog.destroy()
