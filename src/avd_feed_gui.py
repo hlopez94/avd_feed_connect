@@ -74,7 +74,7 @@ from avd_feed_connect import config, http  # noqa: E402
 from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
-    apply_client_hotkeys, build_display_args)
+    apply_client_hotkeys, build_display_args, session_log_path)
 from avd_feed_connect.gui.theme import CSS_BASE, PALETTE_DARK, PALETTE_LIGHT  # noqa: E402
 from avd_feed_connect.gui.demo import demo_resources  # noqa: E402
 from avd_feed_connect.gui import storage, tray_menu, x11focus  # noqa: E402
@@ -1178,7 +1178,9 @@ class AvdApp(Gtk.Application):
             env["LD_LIBRARY_PATH"] = config.SDL_LIBS + (
                 os.pathsep + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
         safe = _re.sub(r"[^A-Za-z0-9]+", "_", res["title"])[:40]
-        logpath = os.path.join(session.client.output_dir, f"session_{safe}_{hashlib.sha256(res['id'].encode()).hexdigest()[:16]}.log")
+        logpath = session_log_path(
+            session.client.output_dir,
+            f"session_{safe}_{hashlib.sha256(res['id'].encode()).hexdigest()[:16]}")
         argv = [config.SDL, path, "/gateway:type:arm", "/sec:nla" if nla else "/sec:aad"]
         if session.client.upn:
             argv.append(f"/u:{session.client.upn}")
@@ -1270,7 +1272,7 @@ class AvdApp(Gtk.Application):
         state = {"connected": False}
         buf = b""
         try:
-            log = open(logpath, "wb")
+            log = open(logpath, "xb")
         except OSError:
             log = open(os.devnull, "wb")
         try:

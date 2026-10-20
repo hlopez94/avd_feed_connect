@@ -6,13 +6,21 @@ a PTY, so it can resolve the connection-time AAD prompt silently — see
 :mod:`avd_feed_connect.gui.connect`; this module is the CLI path.
 """
 
+from datetime import datetime, timezone
 import json
 import os
 import shlex
 import subprocess
+import uuid
 
 from .. import config
 from .resources import set_rdp_dynamic_resolution, set_rdp_multimon
+
+
+def session_log_path(output_dir, prefix):
+    """Name one connection log without reusing earlier sessions' paths."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    return os.path.join(output_dir, f"{prefix}_{stamp}_{uuid.uuid4().hex}.log")
 
 
 def build_display_args(path, extra, want_multimon):
@@ -112,9 +120,9 @@ class RdpLauncher:
             env["LD_LIBRARY_PATH"] = self.sdl_libs + (
                 os.pathsep + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
         os.makedirs(config.OUT, exist_ok=True)
-        log = os.path.join(config.OUT, "feed-last-run.log")
+        log = session_log_path(config.OUT, "feed")
         argv = build_argv(self.sdl, path, upn)
         print("launching:", " ".join(argv))
         print("log:", log)
-        with open(log, "w") as lf:
+        with open(log, "x") as lf:
             return subprocess.call(argv, env=env, stdout=lf, stderr=subprocess.STDOUT)
