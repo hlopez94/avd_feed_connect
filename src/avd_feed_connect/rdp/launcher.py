@@ -86,6 +86,8 @@ def apply_client_hotkeys(mode, path=None):
 def build_argv(sdl, path, upn):
     """Assemble the sdl-freerdp command line for a full-screen CLI connection."""
     argv = [sdl, path, f"/gateway:{config.gateway_arg()}", "/sec:aad"]
+    if config.azure_arg():  # sovereign cloud: point AAD at its Entra via /azure
+        argv.append(f"/azure:{config.azure_arg()}")
     if upn:
         argv.append(f"/u:{upn}")
     # Pin the host cert on first use by default; AVD_CERT=ignore turns the check
