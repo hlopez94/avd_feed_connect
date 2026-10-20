@@ -408,3 +408,29 @@ def test_tile_state_labels_are_derived_from_state_and_translate_live(app):
     assert not tile._tile.has_css_class('tile-connected')
     assert (owner.id, 'same') not in app._sessions
     app._set_language('en')
+
+
+def test_localization_registrations_follow_native_lifetime_without_language_refresh():
+    import gc
+    from avd_feed_connect.gui import localization
+    from avd_feed_connect.i18n import _
+    gc.collect()
+    registries = (localization._widgets, localization._models, localization._dropdowns)
+    baseline = tuple(map(len, registries))
+    parent = Gtk.Box()
+    label = localization.create(Gtk.Label, label=_('Save'))
+    dropdown = localization.create(Gtk.DropDown,
+                                  model=localization.strings([_('Cancel'), _('Save')]))
+    parent.append(label)
+    parent.append(dropdown)
+    del label, dropdown
+    gc.collect()
+    assert tuple(map(len, registries)) == tuple(count + 1 for count in baseline)
+    # Native ownership, rather than the Python wrapper, retains each binding.
+    assert parent.get_first_child()._translation_bindings['label'].source == 'Save'
+    while child := parent.get_first_child():
+        parent.remove(child)
+    del child, parent
+    gc.collect()
+    # No configure/refresh call is needed to remove dead registrations.
+    assert tuple(map(len, registries)) == baseline

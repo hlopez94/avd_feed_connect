@@ -8,16 +8,25 @@ from ..i18n import Message, on_language_changed
 
 # GObject weak refs follow native widget lifetime, unlike Python weak refs:
 # PyGObject can discard/recreate a Python wrapper while its widget stays alive.
-_widgets = []
-_models = []
-_dropdowns = []
+_widgets = {}
+_models = {}
+_dropdowns = {}
+
+
+def _forget(references, token):
+    references.pop(token, None)
+
+
+def _track(widget, references):
+    token = object()
+    references[token] = widget.weak_ref(_forget, references, token)
 
 
 def bind(widget, property_name, value):
     properties = getattr(widget, '_translation_bindings', None)
     if properties is None:
         properties = widget._translation_bindings = {}
-        _widgets.append(widget.weak_ref())
+        _track(widget, _widgets)
     if isinstance(value, Message):
         properties[property_name] = value
         value = value.render()
@@ -31,23 +40,23 @@ def create(widget_type, **properties):
                             for key, value in properties.items()})
     messages = {key: value for key, value in properties.items() if isinstance(value, Message)}
     if isinstance(widget, Gtk.DropDown):
-        _dropdowns.append(widget.weak_ref())
+        _track(widget, _dropdowns)
     if messages:
         widget._translation_bindings = messages
-        _widgets.append(widget.weak_ref())
+        _track(widget, _widgets)
     return widget
 
 
 def strings(labels):
     model = Gtk.StringList.new([str(label) for label in labels])
     model._translation_labels = labels
-    _models.append(model.weak_ref())
+    _track(model, _models)
     return model
 
 
 def _alive(references):
-    references[:] = [reference for reference in references if reference() is not None]
-    return [reference() for reference in references]
+    return [widget for reference in list(references.values())
+            if (widget := reference()) is not None]
 
 
 def refresh_bindings():
