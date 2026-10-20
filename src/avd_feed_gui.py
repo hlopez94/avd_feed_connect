@@ -267,6 +267,8 @@ class AvdApp(Gtk.Application):
                     self._error("Could not save account name: " + str(error))
                     return
                 self._rebuild_account_menu()
+                if self._visible(session):
+                    self._update_account(session.client.upn)
                 self._tray_refresh()
             dialog.destroy()
 
@@ -585,7 +587,7 @@ class AvdApp(Gtk.Application):
             self._acct_who.set_text("Sign in")
             self._avatar_lbl.set_text("?")
             return
-        self._acct_who.set_text(who)
+        self._acct_who.set_text(self.current.display_name if self.current else who)
         user = who.split("@", 1)[0]
         parts = _re.split(r"[.\-_]+", user)
         initials = (parts[0][:1] + (parts[1][:1] if len(parts) > 1 else user[1:2]))

@@ -260,3 +260,12 @@ def test_background_workspace_name_does_not_replace_account_domain(app):
     text = app._account_rows.get_last_child().get_first_child().get_child()
     assert text.get_first_child().get_text() == 'example.com'
     assert app.current is a
+
+
+def test_header_displays_alias_and_keeps_email_in_selector(app):
+    owner = add_saved(app, 'a', 'a@example.com')
+    owner.profile['alias'] = 'Tessitura Network'
+    app._select_account(owner.id)
+    assert app._acct_who.get_text() == 'Tessitura Network'
+    text = app._account_rows.get_first_child().get_first_child().get_child()
+    assert text.get_last_child().get_text() == 'a@example.com'
