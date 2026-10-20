@@ -60,6 +60,20 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.5.0" date="2026-10-20">
+      <description>
+        <ul>
+          <li>Sign in to more than one Microsoft work account and switch
+          between companies from the account menu, without signing out.
+          Open connections stay running while you switch. Each account keeps
+          its own sign-in, workspaces, and connection preferences, and can be
+          given a custom name. A separate Settings (gear) menu now holds
+          Appearance, system tray, and default connection options, and these
+          menus and the connection-settings windows follow the app's dark
+          theme. Thanks to Hernán López for the contribution.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.12" date="2026-10-16">
       <description>
         <ul>
