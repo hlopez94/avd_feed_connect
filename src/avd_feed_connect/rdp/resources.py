@@ -1,5 +1,6 @@
 """Download a resource's ready-to-use .rdp file from its feed ResourceFile URL."""
 
+import hashlib
 import os
 import re
 import sys
@@ -7,7 +8,7 @@ import sys
 from .. import config, http
 
 
-def download_rdp(token, res):
+def download_rdp(token, res, output_dir=None):
     """Fetch resource ``res``'s .rdp text and write it under the feed data dir,
     returning the path. ``res`` is a resource dict from the feed."""
     if not res["rdp_url"]:
@@ -15,9 +16,12 @@ def download_rdp(token, res):
     st, _, rdp = http.get(res["rdp_url"], token)
     if st != 200:
         sys.exit(f"rdp download failed ({st}): {rdp[:300]}")
-    os.makedirs(config.OUT, exist_ok=True)
+    directory = output_dir or config.OUT
+    os.makedirs(directory, mode=0o700, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", res["title"])[:80]
-    path = os.path.join(config.OUT, safe + ".rdp")
+    if output_dir:
+        safe += "_" + hashlib.sha256(res["id"].encode()).hexdigest()[:16]
+    path = os.path.join(directory, safe + ".rdp")
     with open(path, "w") as f:
         f.write(rdp)
     return path

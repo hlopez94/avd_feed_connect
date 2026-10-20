@@ -54,3 +54,27 @@ def build_menu(resources, sessions):
               item("Show window", ("show",)),
               item("Quit", ("quit",))]
     return items
+
+
+def build_accounts_menu(accounts, sessions):
+    """Group workspaces by account, preserving ownership in resource actions."""
+    items = []
+    for account in accounts:
+        aid = account['id']
+        resources = account['resources']
+        if account.get('removed'):
+            resources = [r for r in resources if sessions.get((aid, r['id']), {}).get('running')]
+        if not resources and account.get('removed'):
+            continue
+        states = {r['id']: sessions.get((aid, r['id']), {}) for r in resources}
+        children = build_menu(resources, states)[:-4]
+        for group in children:
+            for action in group.get('children', []):
+                if action.get('action'):
+                    kind, rid = action['action']
+                    action['action'] = (kind, aid, rid)
+        items.append(item(account['upn'] or 'Saved account', children=children))
+    if not items:
+        items.append(item('No workspaces yet', enabled=False))
+    return items + [SEPARATOR, item('Refresh', ('refresh',)),
+                    item('Show window', ('show',)), item('Quit', ('quit',))]

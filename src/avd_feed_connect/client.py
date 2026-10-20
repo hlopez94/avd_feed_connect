@@ -14,8 +14,9 @@ from .rdp import RdpLauncher, download_rdp
 class AvdClient:
     """Feed + connect operations for one signed-in session."""
 
-    def __init__(self):
-        self.tokens = TokenStore()
+    def __init__(self, token_store=None, output_dir=None):
+        self.tokens = token_store or TokenStore()
+        self.output_dir = output_dir
         self.oauth = OAuthClient(self.tokens)
         self.feed = FeedClient()
         self.rdp = RdpLauncher()
@@ -60,7 +61,7 @@ class AvdClient:
         return self.feed.enumerate(token)
 
     def download_rdp(self, token, res):
-        return download_rdp(token, res)
+        return download_rdp(token, res, output_dir=self.output_dir)
 
     def launch(self, path):
         return self.rdp.launch(path, self.upn)

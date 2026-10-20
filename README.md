@@ -49,6 +49,26 @@ a plaintext file. The embedded sign-in keeps your Microsoft SSO session between
 launches, so re-authenticating (for example when a Conditional Access policy
 expires your token) is usually a single click rather than a full password+MFA.
 
+## Multiple work accounts
+
+Open the avatar/email menu and choose **Add account** to sign in to another
+company. The same menu lists saved accounts; choosing one displays its
+workspaces. Existing remote desktop connections stay open when you switch.
+The tray groups workspaces by account and supports connecting, focusing, and
+disconnecting sessions independently of the account shown in the window.
+
+Each account has separate credentials, Microsoft sign-in cookies, workspace
+and icon caches, connection files, and resource preferences. **Sign out**
+removes only the selected account. Established RDP sessions remain open until
+you disconnect them. Saved sessions from earlier versions are migrated on
+first launch; global preferences are retained.
+
+The separate **Settings** (gear) menu contains **Appearance**, **System tray**,
+and **Default settings…**. These apply across accounts; right-clicking a
+workspace changes that account's resource preferences. The CLI uses the
+selected saved account; `logout` clears that account's credentials and profile.
+A combined view of all accounts is deferred to a later release.
+
 ## Silent connection sign-in
 
 FreeRDP's `/sec:aad` needs an Entra token at connect time. Rather than let
@@ -74,7 +94,7 @@ token is fetched in the background and the session starts with nothing on
 screen yet — the app stays in the tray and no window is shown until the remote
 desktop itself appears. That pause is normal; it isn't stuck.
 
-Two options in the account menu, under **System tray** (both off by default,
+Two options in the **Settings** (gear) menu, under **System tray** (both off by default,
 so closing the window still quits the app):
 
 - **Keep running in the tray when closed** — the window's close button hides it
@@ -216,7 +236,7 @@ override it, the easiest way is right inside the app.
   **Monitors** (single / all / automatic), **Server certificate**, **Client shortcuts**,
   and any **Advanced flags**. These are remembered per resource, so a RemoteApp
   and a full Desktop can differ.
-- **Defaults for everything:** the **⋯ menu → Default settings…** sets the
+- **Defaults for everything:** the **Settings (gear) menu → Default settings…** sets the
   fallback used by any workspace left on "Automatic", plus the account-wide
   **Sign-in browser** identity.
 
