@@ -1235,7 +1235,6 @@ class AvdApp(Gtk.Application):
         workspace_title = None
         if res.get("type") == "Desktop" and self._eff("new_workspace", res, session) == "on" \
                 and backend is not None and backend.available():
-            import uuid
             workspace_title = "AVD-" + uuid.uuid4().hex
             # Last option wins over any custom /t flag. No resource/account data
             # enters the Shell bridge; the random title also works across PID namespaces.
