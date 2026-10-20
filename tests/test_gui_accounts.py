@@ -319,3 +319,163 @@ def test_touch_on_main_content_dismisses_open_menu(app, menu_name):
     app._on_menu_outside_pressed(None, 1, 20, app.win.get_height() - 20)
     drain()
     assert not popover.get_visible()
+
+
+def test_unified_mode_preserves_selection_and_duplicate_resource_sessions(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    child = app._child_for('same', a)
+    marker = object()
+    child._proc = marker
+    app._set_view_mode('all')
+    drain()
+    assert app.current is a
+    assert {tile._account.id for tile in app._tiles} == {a.id, b.id}
+    assert app._child_for('same', a)._proc is marker
+    assert app._child_for('same', b) is not child
+    app._set_view_mode('account')
+    assert app._tiles == [child]
+    assert gui.storage.load_settings()['_account_view'] == 'account'
+
+
+def test_view_toggle_requires_two_live_accounts(app):
+    a = add_saved(app, 'a', 'a@example.com')
+    app._select_account(a.id)
+    assert not app._view_modes.get_visible()
+    b = add_saved(app, 'b', 'b@example.com')
+    app._rebuild_account_menu()
+    assert app._view_modes.get_visible()
+    b.removed = True
+    app._rebuild_account_menu()
+    assert not app._view_modes.get_visible()
+
+
+def test_unified_empty_and_failed_account_keep_other_resources(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    b.resources = []
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app._show('signin', b)
+    drain()
+    assert app.stack.get_visible_child_name() == 'workspaces'
+    assert app._tiles[0]._account is a
+    assert b.client.upn in widget_text(app._resource_box)
+    assert 'Sign in' in labels(app._resource_box)
+
+
+def widget_text(widget):
+    text = widget.get_text() if isinstance(widget, Gtk.Label) else ''
+    child = widget.get_first_child()
+    while child:
+        text += widget_text(child)
+        child = child.get_next_sibling()
+    return text
+
+
+def test_sign_out_clamps_unified_mode_and_keeps_remaining_account(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app._sign_out()
+    drain()
+    assert app.view_mode == 'account'
+    assert app.current is b
+    assert not app._view_modes.get_visible()
+    assert gui.storage.load_settings()['_account_view'] == 'account'
+
+
+def test_unified_alias_workspace_groups_and_refresh_are_independent(app, monkeypatch):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    a.profile['alias'] = 'Fictional North'
+    a.resources += [dict(a.resources[0], id='second', tenant='Second workspace')]
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app._set_status('Sign in again to refresh', b)
+    drain()
+    text = widget_text(app._resource_box)
+    assert 'Fictional North' in text
+    assert 'Second workspace' in text
+    assert 'b@example.com' in text
+    assert 'Sign in again to refresh' in text
+    assert len(app._tiles) == 3
+    calls = []
+    monkeypatch.setattr(app, '_interactive_signin', lambda owner: calls.append(owner.id))
+    row = app._resource_box.get_last_child().get_prev_sibling().get_prev_sibling()
+    # Activate the actual affected-account button, not the selected account.
+    row.get_last_child().emit('clicked')
+    assert calls == [b.id]
+
+
+@pytest.mark.parametrize('count', [0, 1, 2])
+def test_restart_restores_mode_and_selection_or_clamps_to_single_account(app, count):
+    owners = [add_saved(app, str(i), f'person{i}@example.com') for i in range(count)]
+    if owners:
+        app.registry.select(owners[-1].id)
+    gui.storage.save_settings({'_account_view': 'all'})
+    restarted = gui.AvdApp()
+    restarted.set_application_id(gui.APP_ID + "restart")
+    restarted.register(None)
+    try:
+        restarted._build_ui()
+        assert restarted.view_mode == ('all' if count > 1 else 'account')
+        assert restarted.selected_id == (owners[-1].id if owners else None)
+        assert restarted._view_modes.get_visible() == (count > 1)
+    finally:
+        restarted.win.destroy()
+
+
+def test_unified_connection_status_does_not_offer_reauth_or_reload_icons(app, monkeypatch):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    drain()
+    icons = []
+    monkeypatch.setattr(app, '_load_icons', lambda *args: icons.append(args))
+    app._set_status('Connected to Fictional desktop', a)
+    drain()
+    label, button = app._account_status_widgets[a.id]
+    assert label.get_text() == 'Connected to Fictional desktop'
+    assert not button.get_visible()
+    assert not icons
+    app._set_status('Sign in again to refresh', b, reauth=True)
+    drain()
+    assert app._account_status_widgets[b.id][1].get_visible()
+    assert not icons
+
+
+def test_unified_launch_and_pending_callback_use_resource_owner(app, monkeypatch):
+    from types import SimpleNamespace
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    launched = []
+    monkeypatch.setattr(gui.threading, 'Thread', lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: target(*args)))
+    monkeypatch.setattr(app, '_launch', lambda child, resource, windowed, owner:
+                        launched.append((child._account.id, owner.id, resource['id'], windowed)))
+    app._on_tile_activated(app.grid, app._child_for('same', b), windowed=True)
+    assert launched == [(b.id, b.id, 'same', True)]
+    assert app.current is a
+    resumed = []
+    monkeypatch.setattr(app, '_on_tile_activated', lambda grid, child, windowed:
+                        resumed.append((child._account.id, windowed)))
+    b.pending_launch = ('same', True)
+    app._populate(b.resources, b)
+    assert resumed == [(b.id, True)]
+    assert b.pending_launch is None
+
+
+def test_unified_headings_and_mode_buttons_follow_theme(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app.win.present()
+    drain()
+    heading = app._resource_box.get_first_child()
+    for theme, dark in [('dark', True), ('light', False)]:
+        app._set_theme(theme)
+        drain()
+        color = heading.get_style_context().get_color()
+        assert (color.red > .8) if dark else (color.red < .3)
+        assert app._view_buttons['all'].get_active()
+        assert not app._view_buttons['account'].get_active()
