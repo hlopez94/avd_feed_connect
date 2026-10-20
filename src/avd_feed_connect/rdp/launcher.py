@@ -6,12 +6,12 @@ a PTY, so it can resolve the connection-time AAD prompt silently — see
 :mod:`avd_feed_connect.gui.connect`; this module is the CLI path.
 """
 
-from datetime import datetime, timezone
 import json
 import os
 import shlex
 import subprocess
 import uuid
+from datetime import datetime, timezone
 
 from .. import config
 from .resources import set_rdp_dynamic_resolution, set_rdp_multimon
