@@ -117,11 +117,14 @@ class AvdApp(Gtk.Application):
         self.stack = None
         self.grid = None
         self.status = None
+        self._account_sections = {}
+        self._account_status_widgets = {}
         self._tiles = []            # GTK4 FlowBox has no get_children(); track ours
         self._signout_item = None
         self._scale = 1             # client display scale factor (1 or 2 = HiDPI)
         self._n_monitors = 1        # how many monitors the compositor reports
         self._settings = storage.load_settings()   # application-wide defaults and appearance
+        self.view_mode = "all" if self._settings.get("_account_view") == "all" else "account"
         self._signin_dlg = None      # the open sign-in window, if any
         self._connecting = set()      # (account id, resource id) currently connecting
         self._tray = None             # TrayIcon, unless AVD_TRAY=0 or no session bus
@@ -178,7 +181,7 @@ class AvdApp(Gtk.Application):
         return self.accounts.get(self.selected_id)
 
     def _visible(self, session):
-        return session is self.current and not session.removed
+        return not session.removed and (self.view_mode == "all" or session is self.current)
 
     def _select_account(self, profile_id):
         session = self.accounts.get(profile_id)
@@ -189,6 +192,12 @@ class AvdApp(Gtk.Application):
             self.registry.select(profile_id)
         self._update_account(session.client.upn)
         self._rebuild_account_menu()
+        if self.view_mode == "all":
+            self._render_resources()
+            for owner in self.accounts.values():
+                if not owner.removed:
+                    threading.Thread(target=self._background_refresh, args=(owner,), daemon=True).start()
+            return
         self._clear_tiles()
         if session.resources:
             self._populate(session.resources, session)
@@ -200,6 +209,16 @@ class AvdApp(Gtk.Application):
     def _rebuild_account_menu(self):
         if not hasattr(self, '_account_rows'):
             return
+        multiple = sum(not owner.removed for owner in self.accounts.values()) > 1
+        self._view_modes.set_visible(multiple)
+        if not multiple and self.view_mode == "all":
+            self.view_mode = "account"
+            self._settings["_account_view"] = "account"
+            storage.save_settings(self._settings)
+            if hasattr(self, "_resource_box"):
+                self._render_resources()
+        for mode, button in self._view_buttons.items():
+            button.set_active(mode == self.view_mode)
         row = self._account_rows.get_first_child()
         while row:
             self._account_rows.remove(row)
@@ -268,9 +287,11 @@ class AvdApp(Gtk.Application):
                     self._error("Could not save account name: " + str(error))
                     return
                 self._rebuild_account_menu()
-                if self._visible(session):
+                if session is self.current:
                     self._update_account(session.client.upn)
                 self._tray_refresh()
+                if self.view_mode == "all":
+                    self._render_resources()
             dialog.destroy()
 
         save.connect("clicked", apply)
@@ -318,7 +339,7 @@ class AvdApp(Gtk.Application):
     def _background_refresh(self, session):
         if not self._do_refresh(True, session):
             if session.resources:
-                self._set_status(self._refresh_failed_status(session), session)
+                self._set_status(self._refresh_failed_status(session), session, reauth=True)
             else:
                 self._show("signin", session)
             return
@@ -471,6 +492,21 @@ class AvdApp(Gtk.Application):
         pbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         for margin in ("top", "bottom", "start", "end"):
             getattr(pbox, f"set_margin_{margin}")(6)
+        self._view_modes = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self._view_modes.add_css_class("view-modes")
+        previous = None
+        self._view_buttons = {}
+        for mode, label in (("account", "By account"), ("all", "All accounts")):
+            button = Gtk.ToggleButton(label=label, hexpand=True)
+            if previous:
+                button.set_group(previous)
+            button.set_active(self.view_mode == mode)
+            button.connect("toggled", lambda control, value=mode:
+                           self._set_view_mode(value) if control.get_active() else None)
+            self._view_buttons[mode] = button
+            self._view_modes.append(button)
+            previous = button
+        pbox.append(self._view_modes)
         self._account_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         pbox.append(self._account_rows)
         self._account_separator = Gtk.Separator()
@@ -545,7 +581,9 @@ class AvdApp(Gtk.Application):
         self.grid.set_margin_top(8); self.grid.set_margin_bottom(18)
         self.grid.set_margin_start(22); self.grid.set_margin_end(22)
         self.grid.connect("child-activated", self._on_tile_activated)
-        sw.set_child(self.grid)
+        self._resource_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, valign=Gtk.Align.START)
+        self._resource_box.append(self.grid)
+        sw.set_child(self._resource_box)
 
         # Connecting overlay: centered spinner card shown while a session is
         # establishing (silent AAD + RDP handshake), until the desktop logs on.
@@ -608,8 +646,22 @@ class AvdApp(Gtk.Application):
         if not window.is_active():
             self._dismiss_menus()
 
-    def _set_status(self, text, session=None):
-        GLib.idle_add(lambda: self.status.set_text(text) if self.status and (session is None or self._visible(session)) else None)
+    def _set_status(self, text, session=None, reauth=False):
+        def apply():
+            if session is not None:
+                session.view_status = text
+                session.needs_signin = reauth
+                if self.view_mode == "all" and not session.removed:
+                    widgets = self._account_status_widgets.get(session.id)
+                    if widgets:
+                        widgets[0].set_text(text)
+                        widgets[0].get_parent().set_visible(bool(text) or reauth)
+                        widgets[1].set_visible(reauth)
+                    return False
+            if self.status and (session is None or self._visible(session)):
+                self.status.set_text(text)
+            return False
+        GLib.idle_add(apply)
 
     def _update_account(self, who):
         """Fill the header account chip: email + a 2-letter avatar."""
@@ -635,7 +687,7 @@ class AvdApp(Gtk.Application):
                 self._connecting.add(key)
             else:
                 self._connecting.discard(key)
-            visible = [key for key in self._connecting if key[0] == self.selected_id]
+            visible = [key for key in self._connecting if self.view_mode == "all" or key[0] == self.selected_id]
             if visible:
                 n = len(visible)
                 self._connect_label.set_text(
@@ -651,6 +703,12 @@ class AvdApp(Gtk.Application):
     def _show(self, name, session=None):
         def apply():
             if session is not None and not self._visible(session):
+                return False
+            if self.view_mode == "all" and session is not None:
+                if name == "signin":
+                    session.view_status = "Sign in again to refresh"
+                    session.needs_signin = True
+                self._render_resources(session)
                 return False
             self.stack.set_visible_child_name(name)
             # "Sign out" only makes sense once we're signed in (workspaces view)
@@ -897,6 +955,11 @@ class AvdApp(Gtk.Application):
             self._set_connecting("", "", False, session)
 
     def _reload_feed(self):
+        if self.view_mode == "all":
+            for owner in self.accounts.values():
+                if not owner.removed:
+                    threading.Thread(target=self._background_refresh, args=(owner,), daemon=True).start()
+            return
         session = self.current
         if not session or not session.token:
             self._interactive_signin(session)
@@ -909,6 +972,7 @@ class AvdApp(Gtk.Application):
 
     def _load_feed(self, session):
         if not self._ensure_token(session):
+            self._set_status(self._refresh_failed_status(session), session, reauth=True)
             if not session.resources:
                 self._show("signin", session)
             return
@@ -921,56 +985,150 @@ class AvdApp(Gtk.Application):
                 self._set_status("Couldn't refresh workspaces — showing saved list", session)
             else:
                 self._show("signin", session)
-                if self._visible(session):
+                if self.view_mode != "all" and self._visible(session):
                     self._error("Feed error: " + str(error))
             return
         if session.save_resources(resources):
             GLib.idle_add(self._populate, resources, session)
 
+    def _set_view_mode(self, mode):
+        if mode not in ("account", "all") or self.view_mode == mode:
+            return
+        self.view_mode = mode
+        self._settings["_account_view"] = mode
+        storage.save_settings(self._settings)
+        self._render_resources()
+        self._set_connecting("", "", False)
+        if mode == "all":
+            self._reload_feed()
+
     def _clear_tiles(self):
-        for ch in self._tiles:
-            self.grid.remove(ch)
+        for child in self._tiles:
+            parent = child.get_parent()
+            if parent:
+                parent.remove(child)
         self._tiles = []
+        child = self._resource_box.get_first_child()
+        while child:
+            self._resource_box.remove(child)
+            child = self._resource_box.get_first_child()
+        self._account_sections = {}
         self._tray_refresh()
+
+    def _render_resources(self, session=None):
+        partial = self.view_mode == "all" and session is not None and session.id in self._account_sections
+        if partial:
+            section = self._account_sections.pop(session.id)
+            previous = section.get_prev_sibling()
+            for child in self._tiles:
+                if child._account is session:
+                    child.get_parent().remove(child)
+            self._tiles = [child for child in self._tiles if child._account is not session]
+            self._resource_box.remove(section)
+        else:
+            self._clear_tiles()
+            self._account_status_widgets = {}
+        owners = ([owner for owner in self.accounts.values() if not owner.removed]
+                  if self.view_mode == "all" else ([self.current] if self.current else []))
+        for owner in ([session] if partial else owners):
+            section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+            if partial:
+                self._resource_box.insert_child_after(section, previous)
+            else:
+                self._resource_box.append(section)
+            self._account_sections[owner.id] = section
+            owner._rendered_resources = [dict(resource) for resource in owner.resources]
+            if self.view_mode == "all":
+                heading = Gtk.Label(label=owner.display_name + " · " + owner.client.upn, xalign=0,
+                                    margin_start=22, margin_end=22, wrap=True)
+                heading.add_css_class("tname")
+                section.append(heading)
+                message = getattr(owner, "view_status", "")
+                row = Gtk.Box(spacing=12, margin_start=22, margin_end=22)
+                status_label = Gtk.Label(label=message or ("No resources available" if not owner.resources else ""), xalign=0, wrap=True)
+                status_label.add_css_class("status")
+                row.append(status_label)
+                signin = Gtk.Button(label="Sign in")
+                signin.add_css_class("flat")
+                signin.connect("clicked", lambda *_, session=owner: self._interactive_signin(session))
+                signin.set_visible(getattr(owner, "needs_signin", False))
+                row.append(signin)
+                self._account_status_widgets[owner.id] = (status_label, signin)
+                row.set_visible(bool(message) or not owner.resources)
+                section.append(row)
+            groups = {}
+            for resource in owner.resources:
+                groups.setdefault((resource.get("tenant_id", ""), resource.get("tenant") or "Workspace"), []).append(resource)
+            if self.view_mode != "all":
+                groups = {("", ""): owner.resources}
+            for (_, workspace), resources in groups.items():
+                if workspace:
+                    label = Gtk.Label(label=workspace, xalign=0, margin_start=22, wrap=True)
+                    label.add_css_class("status")
+                    section.append(label)
+                grid = Gtk.FlowBox(valign=Gtk.Align.START, max_children_per_line=5,
+                                   min_children_per_line=2, row_spacing=14, column_spacing=14,
+                                   homogeneous=True, selection_mode=Gtk.SelectionMode.NONE,
+                                   margin_top=8, margin_bottom=18, margin_start=22, margin_end=22)
+                grid.connect("child-activated", self._on_tile_activated)
+                section.append(grid)
+                self.grid = grid
+                for res in resources:
+                    child = owner.tiles.get(res["id"])
+                    if child is None:
+                        child = self._make_tile(res, owner)
+                        owner.tiles[res["id"]] = child
+                    child._res = res
+                    grid.append(child)
+                    self._tiles.append(child)
+        count = len(self._tiles)
+        self._count_lbl.set_text(f"{count} resource" + ("" if count == 1 else "s"))
+        self.status.set_text("All accounts" if self.view_mode == "all" else
+                             f"Signed in as {self.current.client.upn}" if self.current else "")
+        self._update_account(self.current.client.upn if self.current else "")
+        self._rebuild_account_menu()
+        self._tray_refresh()
+        self.stack.set_visible_child_name("workspaces" if owners else "signin")
+        self._signout_item.set_sensitive(self.current is not None)
 
     def _populate(self, resources, session=None):
         session = session or self.current
         if session is None or session.removed:
             return False
-        if not self._visible(session):
+        changed = (session.id not in self._account_sections or
+                   getattr(session, "_rendered_resources", None) != resources)
+        session.resources = resources
+        session.view_status = ""
+        session.needs_signin = False
+        if self._visible(session):
+            if changed:
+                self._render_resources(session)
+            else:
+                widgets = self._account_status_widgets.get(session.id)
+                if widgets:
+                    widgets[0].set_text("" if resources else "No resources available")
+                    widgets[1].set_visible(False)
+                    widgets[0].get_parent().set_visible(not resources)
+                self.stack.set_visible_child_name("workspaces")
+                self.status.set_text("All accounts" if self.view_mode == "all" else
+                                     f"Signed in as {session.client.upn}")
+        else:
             self._rebuild_account_menu()
             self._tray_refresh()
-            return False
-        session.resources = resources
-        self._clear_tiles()
-        for res in resources:
-            ch = session.tiles.get(res["id"])
-            if ch is None:
-                ch = self._make_tile(res, session)
-                session.tiles[res["id"]] = ch
-            ch._res = res
-            self.grid.append(ch)
-            self._tiles.append(ch)
-        who = session.client.upn or "your account"
-        self.status.set_text(f"Signed in as {who}")
-        n = len(resources)
-        self._count_lbl.set_text(f"{n} resource" + ("" if n == 1 else "s"))
-        self._update_account(who)
-        self._rebuild_account_menu()
-        self._tray_refresh()
-        self.stack.set_visible_child_name("workspaces")
-        if self._signout_item is not None:
-            self._signout_item.set_sensitive(True)
-        # Icons: cached PNGs show immediately; with a token they're re-fetched
-        # (and re-cached) in the background so the grid never looks "reset".
-        threading.Thread(target=self._load_icons, args=(resources, session, list(self._tiles)),
-                         daemon=True).start()
-        # A connect that had to wait for sign-in resumes now, on the fresh tiles
+        icon_resources = resources
+        if getattr(session, "_icon_resources", None) == resources:
+            icon_resources = [res for res in resources if res.get("icon32") and
+                              not os.path.isfile(storage.icon_path(res["id"], session.directory))]
+        if icon_resources:
+            session._icon_resources = [dict(resource) for resource in resources]
+            tiles = [session.tiles[res["id"]] for res in icon_resources if res["id"] in session.tiles]
+            threading.Thread(target=self._load_icons, args=(icon_resources, session, tiles), daemon=True).start()
         pending, session.pending_launch = session.pending_launch, None
         if pending:
-            ch = self._child_for(pending[0])
-            if ch:
-                self._on_tile_activated(self.grid, ch, windowed=pending[1])
+            child = self._child_for(pending[0], session)
+            if child:
+                self._on_tile_activated(self.grid, child, windowed=pending[1])
+        return False
 
     def _make_tile(self, res, session):
         is_desktop = res["type"] == "Desktop"
@@ -1018,6 +1176,10 @@ class AvdApp(Gtk.Application):
         child._account = session
         child._res = res
         child._img = img
+        try:
+            img.set_from_paintable(Gdk.Texture.new_from_filename(storage.icon_path(res["id"], session.directory)))
+        except GLib.Error:
+            pass
         child._tile = tile
         child._pill = pill
         child._proc = None
@@ -1100,9 +1262,14 @@ class AvdApp(Gtk.Application):
                 tex = Gdk.Texture.new_from_bytes(GLib.Bytes.new(data))
             except Exception:
                 continue
-            ch = children.get(res["id"])
-            if ch:
-                GLib.idle_add(lambda c=ch, t=tex: c._img.set_from_paintable(t) if self._visible(session) else None)
+            def apply(resource_id=res["id"], texture=tex):
+                if session.removed:
+                    return False
+                child = session.tiles.get(resource_id) or children.get(resource_id)
+                if child is not None and child._account is session:
+                    child._img.set_from_paintable(texture)
+                return False
+            GLib.idle_add(apply)
 
     # ---- launch + live connection state -----------------------------------
     def _on_tile_activated(self, flowbox, child, windowed=False):

@@ -428,3 +428,304 @@ def test_workspace_setting_hidden_outside_gnome(app, monkeypatch, resource_setti
     note = next(w for w in labels if 'Requires the optional GNOME extension' in w.get_text())
     assert not note.get_visible()
     dialog.destroy()
+
+
+def test_unified_mode_preserves_selection_and_duplicate_resource_sessions(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    child = app._child_for('same', a)
+    marker = object()
+    child._proc = marker
+    app._set_view_mode('all')
+    drain()
+    assert app.current is a
+    assert {tile._account.id for tile in app._tiles} == {a.id, b.id}
+    assert app._child_for('same', a)._proc is marker
+    assert app._child_for('same', b) is not child
+    app._set_view_mode('account')
+    assert app._tiles == [child]
+    assert gui.storage.load_settings()['_account_view'] == 'account'
+
+
+def test_view_toggle_requires_two_live_accounts(app):
+    a = add_saved(app, 'a', 'a@example.com')
+    app._select_account(a.id)
+    assert not app._view_modes.get_visible()
+    b = add_saved(app, 'b', 'b@example.com')
+    app._rebuild_account_menu()
+    assert app._view_modes.get_visible()
+    b.removed = True
+    app._rebuild_account_menu()
+    assert not app._view_modes.get_visible()
+
+
+def test_unified_empty_and_failed_account_keep_other_resources(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    b.resources = []
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app._show('signin', b)
+    drain()
+    assert app.stack.get_visible_child_name() == 'workspaces'
+    assert app._tiles[0]._account is a
+    assert b.client.upn in widget_text(app._resource_box)
+    assert 'Sign in' in labels(app._resource_box)
+
+
+def widget_text(widget):
+    text = widget.get_text() if isinstance(widget, Gtk.Label) else ''
+    child = widget.get_first_child()
+    while child:
+        text += widget_text(child)
+        child = child.get_next_sibling()
+    return text
+
+
+def test_sign_out_clamps_unified_mode_and_keeps_remaining_account(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app._sign_out()
+    drain()
+    assert app.view_mode == 'account'
+    assert app.current is b
+    assert not app._view_modes.get_visible()
+    assert gui.storage.load_settings()['_account_view'] == 'account'
+
+
+def test_unified_alias_workspace_groups_and_refresh_are_independent(app, monkeypatch):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    a.profile['alias'] = 'Fictional North'
+    a.resources += [dict(a.resources[0], id='second', tenant='Second workspace')]
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app._set_status('Sign in again to refresh', b)
+    drain()
+    text = widget_text(app._resource_box)
+    assert 'Fictional North' in text
+    assert 'Second workspace' in text
+    assert 'b@example.com' in text
+    assert 'Sign in again to refresh' in text
+    assert len(app._tiles) == 3
+    calls = []
+    monkeypatch.setattr(app, '_interactive_signin', lambda owner: calls.append(owner.id))
+    row = app._account_sections[b.id].get_first_child().get_next_sibling()
+    # Activate the actual affected-account button, not the selected account.
+    row.get_last_child().emit('clicked')
+    assert calls == [b.id]
+
+
+@pytest.mark.parametrize('count', [0, 1, 2])
+def test_restart_restores_mode_and_selection_or_clamps_to_single_account(app, count):
+    owners = [add_saved(app, str(i), f'person{i}@example.com') for i in range(count)]
+    if owners:
+        app.registry.select(owners[-1].id)
+    gui.storage.save_settings({'_account_view': 'all'})
+    restarted = gui.AvdApp()
+    restarted.set_application_id(gui.APP_ID + "restart")
+    restarted.register(None)
+    try:
+        restarted._build_ui()
+        assert restarted.view_mode == ('all' if count > 1 else 'account')
+        assert restarted.selected_id == (owners[-1].id if owners else None)
+        assert restarted._view_modes.get_visible() == (count > 1)
+    finally:
+        restarted.win.destroy()
+
+
+def test_unified_connection_status_does_not_offer_reauth_or_reload_icons(app, monkeypatch):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    drain()
+    icons = []
+    monkeypatch.setattr(app, '_load_icons', lambda *args: icons.append(args))
+    app._set_status('Connected to Fictional desktop', a)
+    drain()
+    label, button = app._account_status_widgets[a.id]
+    assert label.get_text() == 'Connected to Fictional desktop'
+    assert not button.get_visible()
+    assert not icons
+    app._set_status('Sign in again to refresh', b, reauth=True)
+    drain()
+    assert app._account_status_widgets[b.id][1].get_visible()
+    assert not icons
+
+
+def test_unified_launch_and_pending_callback_use_resource_owner(app, monkeypatch):
+    from types import SimpleNamespace
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    launched = []
+    monkeypatch.setattr(gui.threading, 'Thread', lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: target(*args)))
+    monkeypatch.setattr(app, '_launch', lambda child, resource, windowed, owner:
+                        launched.append((child._account.id, owner.id, resource['id'], windowed)))
+    app._on_tile_activated(app.grid, app._child_for('same', b), windowed=True)
+    assert launched == [(b.id, b.id, 'same', True)]
+    assert app.current is a
+    resumed = []
+    monkeypatch.setattr(app, '_on_tile_activated', lambda grid, child, windowed:
+                        resumed.append((child._account.id, windowed)))
+    b.pending_launch = ('same', True)
+    app._populate(b.resources, b)
+    assert resumed == [(b.id, True)]
+    assert b.pending_launch is None
+
+
+def test_unified_headings_and_mode_buttons_follow_theme(app):
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    app.win.present()
+    drain()
+    heading = app._account_sections[a.id].get_first_child()
+    for theme, dark in [('dark', True), ('light', False)]:
+        app._set_theme(theme)
+        drain()
+        color = heading.get_style_context().get_color()
+        assert (color.red > .8) if dark else (color.red < .3)
+        assert app._view_buttons['all'].get_active()
+        assert not app._view_buttons['account'].get_active()
+
+
+def test_renaming_other_unified_account_keeps_selected_header_identity(app, monkeypatch):
+    a = add_saved(app, 'a', 'alice.north@example.com')
+    b = add_saved(app, 'b', 'ben.south@example.com')
+    app._select_account(a.id)
+    app._set_view_mode('all')
+    assert app._avatar_lbl.get_text() == 'AN'
+    updates = []
+    update = app._update_account
+    monkeypatch.setattr(app, '_update_account', lambda who: (updates.append(who), update(who)))
+    app._edit_account_name(b)
+    dialog = next(w for w in Gtk.Window.list_toplevels()
+                  if w.get_title() == 'Edit account name' and w.get_transient_for() is app.win)
+    entry = dialog.get_child().get_first_child().get_next_sibling()
+    entry.set_text('Fictional South')
+    dialog.get_child().get_last_child().get_last_child().emit('clicked')
+    assert b.display_name == 'Fictional South'
+    assert updates and all(who == a.client.upn for who in updates)
+    assert app._avatar_lbl.get_text() == 'AN'
+    assert app._acct_who.get_text() == a.display_name
+
+
+def test_unified_refresh_only_rebuilds_changed_owner_and_fetches_its_icons(app, monkeypatch):
+    from types import SimpleNamespace
+    owners = [add_saved(app, str(i), f'person{i}@example.com') for i in range(3)]
+    monkeypatch.setattr(gui.threading, 'Thread', lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: target(*args)))
+    app._select_account(owners[0].id)
+    app._set_view_mode('all')
+    icons = []
+    monkeypatch.setattr(app, '_load_icons', lambda resources, owner, tiles: icons.append(owner.id))
+    untouched_parent = app._child_for('same', owners[1]).get_parent()
+    changed = [dict(owners[0].resources[0], title='Updated resource')]
+    app._populate(changed, owners[0])
+    assert app._child_for('same', owners[1]).get_parent() is untouched_parent
+    assert icons == [owners[0].id]
+    icons.clear()
+    section = app._account_sections[owners[0].id]
+    app._set_status('Sign in again to refresh', owners[0], reauth=True)
+    drain()
+    app._populate(changed, owners[0])
+    assert not app._account_status_widgets[owners[0].id][1].get_visible()
+    assert app._account_sections[owners[0].id] is section
+    assert app._resource_box.get_first_child() is section
+    assert section.get_next_sibling() is app._account_sections[owners[1].id]
+    assert not icons
+    app._set_view_mode('account')
+    app._set_view_mode('all')
+    assert not icons
+
+
+def test_icon_download_reaches_owner_tile_created_while_download_is_pending(app, monkeypatch):
+    import threading
+    from gi.repository import Gdk
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    b.resources[0]['icon32'] = 'https://icons.example/fictional.png'
+    b.token = 'fictional-token'
+    started, finish = threading.Event(), threading.Event()
+    png = Gdk.MemoryTexture.new(1, 1, Gdk.MemoryFormat.R8G8B8A8,
+                               GLib.Bytes.new(bytes([255, 0, 0, 255])), 4).save_to_png_bytes().get_data()
+
+    def download(url, token):
+        assert token == b.token
+        started.set()
+        assert finish.wait(3)
+        return png
+
+    monkeypatch.setattr(gui.storage, 'bearer_bytes', download)
+    worker = threading.Thread(target=gui.AvdApp._load_icons, args=(app, b.resources, b, []))
+    worker.start()
+    try:
+        assert started.wait(3)
+        assert not b.tiles
+        app._set_view_mode('all')
+        child = app._child_for('same', b)
+        assert child._img.get_storage_type() == Gtk.ImageType.ICON_NAME
+    finally:
+        finish.set()
+        worker.join(3)
+    assert not worker.is_alive()
+    drain()
+    assert child._img.get_storage_type() == Gtk.ImageType.PAINTABLE
+    assert app._child_for('same', a)._img.get_storage_type() == Gtk.ImageType.ICON_NAME
+
+
+def test_unchanged_feed_retries_missing_icon_after_transient_failure(app, monkeypatch):
+    from types import SimpleNamespace
+    from gi.repository import Gdk
+    a, b = add_saved(app, 'a', 'a@example.com'), add_saved(app, 'b', 'b@example.com')
+    app._select_account(a.id)
+    b.resources[0]['icon32'] = 'https://icons.example/fictional.png'
+    b.resources.append(dict(b.resources[0], id='cached', icon32='https://icons.example/cached.png'))
+    b.token = 'fictional-b-token'
+    png = Gdk.MemoryTexture.new(1, 1, Gdk.MemoryFormat.R8G8B8A8,
+                               GLib.Bytes.new(bytes([255, 0, 0, 255])), 4).save_to_png_bytes().get_data()
+    calls = []
+
+    def download(url, token):
+        calls.append((url, token))
+        if len(calls) == 1:
+            raise OSError('Temporary fictional network failure')
+        return png
+
+    monkeypatch.setattr(gui.storage, 'bearer_bytes', download)
+    monkeypatch.setattr(app, '_load_icons', gui.AvdApp._load_icons.__get__(app))
+    monkeypatch.setattr(gui.threading, 'Thread', lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: target(*args)))
+    app._populate(b.resources, b)
+    initial = [(b.resources[0]['icon32'], b.token), (b.resources[1]['icon32'], b.token)]
+    assert calls == initial
+    assert not os.path.exists(gui.storage.icon_path('same', b.directory))
+    app._populate(b.resources, b)
+    assert calls == initial + [(b.resources[0]['icon32'], b.token)]
+    assert os.path.exists(gui.storage.icon_path('same', b.directory))
+    app._populate(b.resources, b)
+    app._populate(a.resources, a)
+    assert calls == initial + [(b.resources[0]['icon32'], b.token)]
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_unchanged_account_refresh_restores_page_and_clears_stale_status(app, monkeypatch, empty):
+    owner = add_saved(app, 'a', 'alice@example.com')
+    if empty:
+        owner.resources = []
+    app._select_account(owner.id)
+    app._populate(owner.resources, owner)
+    section = app._account_sections[owner.id]
+    icons = []
+    monkeypatch.setattr(app, '_load_icons', lambda *args: icons.append(args))
+    app._set_status('Could not refresh — showing saved resources', owner, reauth=True)
+    app._show('busy', owner)
+    drain()
+    assert app.stack.get_visible_child_name() == 'busy'
+    app._populate(owner.resources, owner)
+    assert app.stack.get_visible_child_name() == 'workspaces'
+    assert app.status.get_text() == 'Signed in as alice@example.com'
+    assert not owner.needs_signin
+    assert app._account_sections[owner.id] is section
+    assert not icons
