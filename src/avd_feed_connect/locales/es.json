@@ -125,5 +125,6 @@
   "Desktop connections only. Requires the optional GNOME extension; switches to the new workspace when connected.": "Solo para conexiones de escritorio. Requiere la extensión opcional de GNOME; cambia al nuevo espacio de trabajo al conectarse.",
   "Use Default settings": "Usar configuración predeterminada",
   "Enabled": "Activado",
-  "Disabled": "Desactivado"
+  "Disabled": "Desactivado",
+  "Language…": "Idioma…"
 }

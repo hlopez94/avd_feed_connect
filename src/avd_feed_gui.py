@@ -88,7 +88,7 @@ from avd_feed_connect.auth.tokens import TokenStore  # noqa: E402
 from avd_feed_connect.gui.session import AccountSession  # noqa: E402
 
 APP_NAME = "AVD Feed + Connect Linux"
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.6.2"
 
 
 
@@ -467,23 +467,14 @@ class AvdApp(Gtk.Application):
             b.connect("toggled", lambda btn, k=key: btn.get_active() and self._set_theme(k))
             seg.append(b)
         pbox.append(seg)
-        language_dd = create(Gtk.DropDown, model=strings(
-            [tr(label) for key, label in LANGUAGES]))
-        language_keys = [key for key, label in LANGUAGES]
-        language_dd.set_selected(language_keys.index(self._settings.get("_language", "system"))
-                                 if self._settings.get("_language", "system") in language_keys else 0)
-        pbox.append(self._form_row(tr("Language"), language_dd))
-        language_note = create(Gtk.Label, label=tr("Language changes apply immediately."),
-                                  xalign=0, wrap=True)
-        language_note.set_max_width_chars(42)
-        pbox.append(language_note)
-        def save_language(dropdown, *_args):
-            if getattr(self, "_changing_language", False):
-                return
-            self._settings["_language"] = language_keys[dropdown.get_selected()]
-            storage.save_settings(self._settings)
-            self._set_language(self._settings["_language"])
-        language_dd.connect("notify::selected", save_language)
+        # Language lives in the Default settings dialog: a GtkDropDown opens its
+        # own popup, which fights this non-autohide popover's outside-click
+        # dismisser (the menu just closed on click). A real window has no such
+        # conflict and a dropdown scales to many languages. This row opens it.
+        language_btn = create(Gtk.Button, label=tr("Language…")); language_btn.add_css_class("flat")
+        language_btn.connect("clicked",
+                             lambda *_: (self._settings_pop.popdown(), self._open_settings(None)))
+        pbox.append(language_btn)
         pbox.append(Gtk.Separator())
 
         # System tray options (off by default, so closing still quits unless
@@ -1804,6 +1795,29 @@ class AvdApp(Gtk.Application):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for m in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{m}")(16)
+
+        # Language is an app-wide preference, shown only in the Default settings
+        # dialog (res is None). It applies immediately and is persisted on change
+        # rather than waiting for Save, matching how it behaved in the menu.
+        if res is None:
+            language_keys = [key for key, label in LANGUAGES]
+            language_dd = create(Gtk.DropDown, model=strings([tr(label) for key, label in LANGUAGES]))
+            current_language = self._settings.get("_language", "system")
+            language_dd.set_selected(language_keys.index(current_language)
+                                     if current_language in language_keys else 0)
+            box.append(self._form_row(tr("Language"), language_dd))
+            language_note = create(Gtk.Label, label=tr("Language changes apply immediately."),
+                                   xalign=0, wrap=True)
+            language_note.add_css_class("tile-sub")
+            box.append(language_note)
+
+            def change_language(dropdown, *_args):
+                if getattr(self, "_changing_language", False):
+                    return
+                self._settings["_language"] = language_keys[dropdown.get_selected()]
+                storage.save_settings(self._settings)
+                self._set_language(self._settings["_language"])
+            language_dd.connect("notify::selected", change_language)
 
         scale_dd = create(Gtk.DropDown, model=strings([tr(label) for label in storage.SCALE_LABELS]))
         sv = cur.get("scale", "auto")
