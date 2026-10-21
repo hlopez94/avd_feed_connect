@@ -448,3 +448,61 @@ Flatpak install. Contributions welcome.
 
 MIT for this app's code. Bundled components keep their own licenses (FreeRDP:
 Apache-2.0, SDL: Zlib).
+
+### Optional GNOME connection workspaces
+
+On GNOME, in **Default settings**, enable **Start connection in a new virtual desktop** to
+place desktop connections in separate GNOME workspaces. A resource's settings
+can inherit the default, enable it, or disable it. Remote apps are unaffected.
+The app switches to the session's workspace after successful logon. The default
+is disabled; without the companion extension, connections open normally. The
+option is hidden on other desktops, and saved enabled preferences do not invoke
+GNOME integration there. Backend selection is separate from the preference and
+launch lifecycle so future desktop integrations can supply their own capabilities;
+this release implements only GNOME. No generic Wayland support is assumed.
+
+GNOME Wayland requires the small companion Shell extension in
+`gnome-extension/avd-workspaces@avd-feed-connect` (GNOME Shell 50). To install it
+manually from a source checkout, copy that directory into
+`~/.local/share/gnome-shell/extensions/`, log out and back in, then enable
+**AVD connection workspaces** in GNOME Extensions. Installation and enablement
+are explicit user actions; the app never performs either automatically.
+The Flatpak manifest includes permission for the extension's dedicated D-Bus
+name. Existing installations need a build containing that permission.
+
+Placement uses an exact random FreeRDP window title rather than resource names
+or sandbox PIDs. It waits briefly for the desktop window after logon, reuses an
+empty trailing workspace when available, and otherwise appends one. Reconnects
+and focus actions reuse the session; failed launches create no workspace.
+No global workspace settings are changed and no workspace is deleted: GNOME
+reclaims empty dynamic workspaces normally; with fixed workspaces, an existing
+empty workspace is reserved, or placement falls back to the current workspace
+if none is available. The configured number of workspaces is preserved. On secondary monitors GNOME's existing
+“Workspaces on primary display only” preference still applies. Display hotplug
+windows created later by FreeRDP are outside the initial placement attempt.
+
+### UI translations
+
+Select **Settings → Language** to use the system language or choose English,
+Latin American Spanish, Spain Spanish, or Argentina Spanish. Changes are saved
+and applied immediately, including open settings and tray menus. System selection
+uses `LANGUAGE` (first preference), then `LC_ALL`, `LC_MESSAGES`, and `LANG`;
+`C`/`POSIX` message locales always use English. Latin American Spanish locales
+map to `es-419`; unsupported languages and regions use English.
+
+English strings stay in Python source. UTF-8 JSON catalogs in
+`src/avd_feed_connect/locales/` use the English string as their key. `es.json`
+is deliberately shared by all three Spanish variants; regional files contain
+only wording overrides. A missing or empty translation falls back to the
+English source. Keep named `{placeholders}`, newlines and technical identifiers
+intact. The supported languages use singular for one and plural otherwise.
+To add or update translations, edit those catalogs and validate with:
+
+```sh
+python -m pytest tests/test_i18n.py
+python -m pip wheel --no-deps .
+```
+
+The catalog tests check source coverage and placeholder consistency. Setuptools
+includes catalogs as package data; the Flatpak manifest copies the entire
+Python package, including these catalogs, without a separate compilation step.

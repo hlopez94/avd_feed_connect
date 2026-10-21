@@ -20,6 +20,7 @@ import time
 import urllib.parse
 import webbrowser
 
+from ..i18n import _ as tr
 from .. import config, http
 from .tokens import TokenStore
 
@@ -165,7 +166,7 @@ class OAuthClient:
             return
         claims = claims_from_token(tok)
         if (claims['tid'], claims['oid']) != self.account_identity:
-            raise ValueError("Please sign in with the selected work account.")
+            raise ValueError(tr("Please sign in with the selected work account."))
 
     def get_token(self, verbose=True, use_device_code=False):
         """Return an access token: silent refresh if a cached refresh token

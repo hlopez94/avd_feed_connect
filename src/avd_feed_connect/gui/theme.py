@@ -73,6 +73,11 @@ menubutton.acct-btn > button:hover { border-color:@avd_border_strong; background
 .acct-who { font-weight:600; font-size:12px; color:@avd_ink; }
 .caret { color:@avd_faint; }
 
+.view-modes button { background:@avd_surface2; color:@avd_ink;
+  border:1px solid @avd_border; box-shadow:none; min-height:36px; }
+.view-modes button:checked { background:alpha(@avd_accent,0.18);
+  color:@avd_accent_ink; border-color:@avd_accent; }
+.view-modes button:hover { border-color:@avd_accent; }
 .section-h { font-weight:800; font-size:11px; letter-spacing:1px; color:@avd_muted; }
 .count { font-size:12px; color:@avd_faint; }
 

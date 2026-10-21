@@ -1,0 +1,7 @@
+{
+  "uuid": "avd-workspaces@avd-feed-connect",
+  "name": "AVD connection workspaces",
+  "description": "Move opted-in AVD Feed + Connect desktop sessions into dedicated workspaces.",
+  "shell-version": ["50"],
+  "version": 1
+}

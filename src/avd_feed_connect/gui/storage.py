@@ -40,6 +40,12 @@ HOTKEY_LABELS = ["Automatic (FreeRDP default)", "Enabled (Right Shift + key)",
                  "Disabled (send all keys to the PC)"]
 HOTKEY_VALUES = ["auto", "on", "off"]
 
+# Workspace placement can inherit per resource; application defaults cannot.
+WORKSPACE_LABELS = ["Use Default settings", "Enabled", "Disabled"]
+WORKSPACE_VALUES = ["auto", "on", "off"]
+WORKSPACE_DEFAULT_LABELS = ["Disabled", "Enabled"]
+WORKSPACE_DEFAULT_VALUES = ["off", "on"]
+
 # User-Agent presented by the embedded sign-in webview. "auto" leaves
 # WebKitGTK's own UA, which identifies as Linux — some tenants' Conditional
 # Access policies ("require a compliant/Windows device" or "require Microsoft

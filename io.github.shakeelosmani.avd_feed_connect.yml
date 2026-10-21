@@ -26,6 +26,7 @@ finish-args:
   - --socket=pulseaudio             # RDP audio playback + microphone redirect
   - --device=dri                    # GPU for the RDP graphics pipeline
   - --device=all                    # webcam (camera redirection) + input
+  - --talk-name=io.github.shakeelosmani.AvdWorkspaces  # optional GNOME workspace extension
   - --talk-name=org.kde.StatusNotifierWatcher   # tray icon
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.freedesktop.secrets         # login keyring (libsecret) for the refresh token

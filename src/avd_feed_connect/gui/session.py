@@ -5,6 +5,7 @@ import os
 import threading
 import time
 
+from ..i18n import _ as tr
 from ..accounts import claims_from_token, write_json
 from . import storage
 
@@ -41,7 +42,7 @@ class AccountSession:
         # AVD TenantDisplayName can be a workspace/Cloud PC name, not an
         # organization name. Only the user-supplied alias names the company.
         domain = self.client.upn.partition('@')[2]
-        return domain or self.client.upn or "Saved account"
+        return domain or self.client.upn or tr("Saved account")
 
     def apply_token(self, tok):
         with self.refresh_lock:
@@ -50,7 +51,7 @@ class AccountSession:
             if tok.get('id_token'):
                 claims = claims_from_token(tok)
                 if self.profile['tid'] and (claims['tid'], claims['oid']) != (self.profile['tid'], self.profile['oid']):
-                    self.client.oauth.last_refresh_error = 'Please sign in with the selected work account.'
+                    self.client.oauth.last_refresh_error = tr('Please sign in with the selected work account.')
                     return False
                 self.profile.update(claims)
                 self.client.upn = claims['upn']
