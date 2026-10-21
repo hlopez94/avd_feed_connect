@@ -60,6 +60,24 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.6.0" date="2026-10-20">
+      <description>
+        <ul>
+          <li>An optional unified view shows the workspaces from all of your
+          signed-in accounts together; switch between "By account" and
+          "All accounts" from the account menu.</li>
+          <li>The app can now be used in English or regional Spanish (Latin
+          America, Spain, Argentina); choose the language, or follow the
+          system, under Settings.</li>
+          <li>On GNOME, desktop connections can optionally open in their own
+          virtual desktop and switch to it on connect (needs the small
+          companion GNOME extension; off by default).</li>
+          <li>Each connection now keeps its own log file instead of
+          overwriting the previous one, so earlier diagnostics are preserved.</li>
+          <li>Thanks to Hernán López for all of the above.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-10-20">
       <description>
         <ul>
