@@ -34,6 +34,8 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv('AVD_DEMO', '1')
     monkeypatch.setattr(gui.config, 'CACHE', str(tmp_path / 'token-cache.json'))
     monkeypatch.setattr(gui.storage, 'SETTINGS_FILE', str(tmp_path / 'settings.json'))
+    # Keep general UI assertions independent of the host's language.
+    gui.storage.save_settings({'_language': 'en'})
     monkeypatch.setattr(gui.TokenStore, '_keyring_store', lambda *a: False)
     monkeypatch.setattr(gui.TokenStore, '_keyring_load', lambda *a: None)
     monkeypatch.setattr(gui.TokenStore, '_keyring_clear', lambda *a: None)
@@ -729,3 +731,117 @@ def test_unchanged_account_refresh_restores_page_and_clears_stale_status(app, mo
     assert not owner.needs_signin
     assert app._account_sections[owner.id] is section
     assert not icons
+
+
+def test_language_selection_applies_live_and_preserves_sessions(app):
+    from avd_feed_connect import i18n
+    def descendants(widget):
+        yield widget
+        child = widget.get_first_child()
+        while child:
+            yield from descendants(child)
+            child = child.get_next_sibling()
+    widgets = list(descendants(app.win))
+    dropdown = next(w for w in widgets if isinstance(w, Gtk.DropDown)
+                    and w.get_model().get_string(0) == 'System default')
+    owner = add_saved(app, 'fictional', 'alex@example.test')
+    app._select_account(owner.id)
+    owner.resources = [{'id': 'desk', 'title': 'Save', 'tenant': 'Northstar', 'type': 'Desktop'}]
+    app._populate(owner.resources, owner)
+    tile = owner.tiles['desk']
+    from types import SimpleNamespace
+    process = SimpleNamespace(poll=lambda: None)
+    tile._proc = process
+    tray = SimpleNamespace()
+    tray.set_menu = lambda menu: setattr(tray, "menu", menu)
+    tray.set_tooltip = lambda tooltip: setattr(tray, "tooltip", tooltip)
+    app._tray = tray
+    app._sessions[(owner.id, "desk")] = "connected"
+    app._set_status(i18n._('Connected to {resource}').format(resource='Save'), owner)
+    app._open_settings(None)
+    dialog = next(w for w in Gtk.Window.get_toplevels()
+                  if w.get_title() == 'Default connection settings')
+    connection_dropdown = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown))
+    connection_dropdown.set_selected(3)
+    unsaved_flags = next(w for w in descendants(dialog) if isinstance(w, Gtk.Entry)
+                         and w.get_placeholder_text().startswith("advanced:"))
+    unsaved_flags.set_text("/gfx /network:auto")
+    app._edit_account_name(owner)
+    alias_dialog = next(w for w in Gtk.Window.get_toplevels() if w.get_title() == "Edit account name")
+    alias_entry = next(w for w in descendants(alias_dialog) if isinstance(w, Gtk.Entry))
+    alias_entry.set_text("Unsaved company name")
+    for selection, language, expected in [(2, 'es-419', 'Conectado a Save'),
+                                           (3, 'es-ES', 'Conectado a Save'),
+                                           (4, 'es-AR', 'Conectado a Save'),
+                                           (1, 'en', 'Connected to Save')]:
+        dropdown.set_selected(selection)
+        drain()
+        assert gui.storage.load_settings()['_language'] == language
+        assert app.status.get_text() == expected
+        assert owner.tiles['desk'] is tile and tile._proc is process
+        assert app.current is owner
+        assert tray.menu[-1]['label'] == ('Quit' if language == 'en' else 'Salir')
+        assert str(tray.tooltip) == ('1 session connected' if language == 'en' else '1 sesión conectada')
+        assert app._sessions[(owner.id, 'desk')] == 'connected'
+        assert connection_dropdown.get_selected() == 3
+        assert unsaved_flags.get_text() == '/gfx /network:auto'
+        assert alias_entry.get_text() == 'Unsaved company name'
+        assert alias_dialog.get_title() == ('Edit account name' if language == 'en' else 'Editar nombre de la cuenta')
+        assert any(isinstance(w, Gtk.Label) and w.get_text() == 'Save'
+                   for w in descendants(tile))  # resource title must never be translated
+        assert dialog.get_title() == ('Default connection settings' if language == 'en'
+                                      else 'Configuración de conexión predeterminada')
+        assert any(isinstance(w, Gtk.Button) and w.get_label() ==
+                   ('Save' if language == 'en' else 'Guardar') for w in descendants(dialog))
+    alias_dialog.destroy()
+    dialog.destroy()
+    tile._proc = None
+    app._tray = None
+
+
+def test_tile_state_labels_are_derived_from_state_and_translate_live(app):
+    owner = add_saved(app, 'demo', 'alex@example.test')
+    app._select_account(owner.id)
+    tile = owner.tiles['same']
+    app._set_tile_state('same', 'state-connecting', owner)
+    drain()
+    assert tile._pill.get_visible() and tile._pill.get_text() == 'CONNECTING'
+    app._set_language('es-AR')
+    assert tile._pill.get_text() == 'CONECTANDO'
+    app._set_tile_state('same', 'state-connected', owner)
+    drain()
+    assert tile._pill.get_text() == 'CONECTADO'
+    assert tile._tile.has_css_class('tile-connected')
+    assert app._sessions[(owner.id, 'same')] == 'connected'
+    app._set_tile_state('same', 'state-ended', owner)
+    drain()
+    assert not tile._pill.get_visible()
+    assert not tile._tile.has_css_class('tile-connected')
+    assert (owner.id, 'same') not in app._sessions
+    app._set_language('en')
+
+
+def test_localization_registrations_follow_native_lifetime_without_language_refresh():
+    import gc
+    from avd_feed_connect.gui import localization
+    from avd_feed_connect.i18n import _
+    gc.collect()
+    registries = (localization._widgets, localization._models, localization._dropdowns)
+    baseline = tuple(map(len, registries))
+    parent = Gtk.Box()
+    label = localization.create(Gtk.Label, label=_('Save'))
+    dropdown = localization.create(Gtk.DropDown,
+                                  model=localization.strings([_('Cancel'), _('Save')]))
+    parent.append(label)
+    parent.append(dropdown)
+    del label, dropdown
+    gc.collect()
+    assert tuple(map(len, registries)) == tuple(count + 1 for count in baseline)
+    # Native ownership, rather than the Python wrapper, retains each binding.
+    assert parent.get_first_child()._translation_bindings['label'].source == 'Save'
+    while child := parent.get_first_child():
+        parent.remove(child)
+    del child, parent
+    gc.collect()
+    # No configure/refresh call is needed to remove dead registrations.
+    assert tuple(map(len, registries)) == baseline
