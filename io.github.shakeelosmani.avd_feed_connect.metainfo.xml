@@ -60,6 +60,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.6.1" date="2026-10-21">
+      <description>
+        <ul>
+          <li>The Spanish translation now covers the unified account view and
+          the GNOME virtual-desktop setting, which previously stayed in
+          English.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-10-20">
       <description>
         <ul>

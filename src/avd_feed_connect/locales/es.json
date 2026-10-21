@@ -117,5 +117,13 @@
   "Spanish (Latin America)": "Español (Latinoamérica)",
   "Spanish (Spain)": "Español (España)",
   "Spanish (Argentina)": "Español (Argentina)",
-  "Language changes apply immediately.": "Los cambios de idioma se aplican de inmediato."
+  "Language changes apply immediately.": "Los cambios de idioma se aplican de inmediato.",
+  "By account": "Por cuenta",
+  "All accounts": "Todas las cuentas",
+  "Signed in as {upn}": "Sesión iniciada como {upn}",
+  "Start connection in a new virtual desktop": "Iniciar la conexión en un escritorio virtual nuevo",
+  "Desktop connections only. Requires the optional GNOME extension; switches to the new workspace when connected.": "Solo para conexiones de escritorio. Requiere la extensión opcional de GNOME; cambia al nuevo espacio de trabajo al conectarse.",
+  "Use Default settings": "Usar configuración predeterminada",
+  "Enabled": "Activado",
+  "Disabled": "Desactivado"
 }
