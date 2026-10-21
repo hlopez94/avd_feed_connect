@@ -525,8 +525,8 @@ class AvdApp(Gtk.Application):
         self._view_modes.add_css_class("view-modes")
         previous = None
         self._view_buttons = {}
-        for mode, label in (("account", "By account"), ("all", "All accounts")):
-            button = Gtk.ToggleButton(label=label, hexpand=True)
+        for mode, label in (("account", tr("By account")), ("all", tr("All accounts"))):
+            button = create(Gtk.ToggleButton, label=label, hexpand=True)
             if previous:
                 button.set_group(previous)
             button.set_active(self.view_mode == mode)
@@ -1111,9 +1111,12 @@ class AvdApp(Gtk.Application):
                     grid.append(child)
                     self._tiles.append(child)
         count = len(self._tiles)
-        self._count_lbl.set_text(f"{count} resource" + ("" if count == 1 else "s"))
-        self.status.set_text("All accounts" if self.view_mode == "all" else
-                             f"Signed in as {self.current.client.upn}" if self.current else "")
+        bind(self._count_lbl, 'text',
+             ngettext("{count} resource", "{count} resources", count).format(count=count))
+        bind(self.status, 'text',
+             tr("All accounts") if self.view_mode == "all"
+             else tr("Signed in as {upn}").format(upn=self.current.client.upn) if self.current
+             else "")
         self._update_account(self.current.client.upn if self.current else "")
         self._rebuild_account_menu()
         self._tray_refresh()
@@ -1824,15 +1827,15 @@ class AvdApp(Gtk.Application):
 
         workspace_values = storage.WORKSPACE_VALUES if res else storage.WORKSPACE_DEFAULT_VALUES
         workspace_labels = storage.WORKSPACE_LABELS if res else storage.WORKSPACE_DEFAULT_LABELS
-        workspace_dd = Gtk.DropDown(model=Gtk.StringList.new(workspace_labels))
+        workspace_dd = create(Gtk.DropDown, model=strings([tr(label) for label in workspace_labels]))
         workspace_value = cur.get("new_workspace", "auto" if res else "off")
         workspace_dd.set_selected(workspace_values.index(workspace_value) if workspace_value in workspace_values else 0)
         workspace_dd.set_sensitive(res is None or res.get("type") == "Desktop")
-        workspace_row = self._form_row("Start connection in a new virtual desktop", workspace_dd)
+        workspace_row = self._form_row(tr("Start connection in a new virtual desktop"), workspace_dd)
         workspace_supported = workspace_backend() is not None
         workspace_row.set_visible(workspace_supported)
         box.append(workspace_row)
-        workspace_note = Gtk.Label(label="Desktop connections only. Requires the optional GNOME extension; switches to the new workspace when connected.", xalign=0, wrap=True)
+        workspace_note = create(Gtk.Label, label=tr("Desktop connections only. Requires the optional GNOME extension; switches to the new workspace when connected."), xalign=0, wrap=True)
         workspace_note.set_visible(workspace_supported)
         workspace_note.add_css_class("tile-sub")
         box.append(workspace_note)
