@@ -60,6 +60,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.6.2" date="2026-10-21">
+      <description>
+        <ul>
+          <li>Fixed the language picker: choosing a language no longer just
+          closes the menu. Language now lives in the Default settings dialog,
+          where it applies immediately.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-10-21">
       <description>
         <ul>
