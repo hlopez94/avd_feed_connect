@@ -209,3 +209,50 @@ def test_account_downloads_keep_same_title_resources_separate(tmp_path, monkeypa
     assert open(a).read() == 'username:s:a'
     assert open(b).read() == 'username:s:b'
     assert open(c).read() == 'username:s:c'
+
+
+def test_cli_repeated_connections_preserve_each_log(tmp_path, monkeypatch):
+    from avd_feed_connect import config
+    from avd_feed_connect.rdp.launcher import RdpLauncher
+
+    output = tmp_path / 'feed'
+    output.mkdir()
+    legacy = output / 'feed-last-run.log'
+    legacy.write_text('previous session\n')
+    monkeypatch.setattr(config, 'OUT', str(output))
+    client = tmp_path / 'fake-freerdp'
+    client.write_text('#!/usr/bin/python3\n'
+                      'import pathlib, sys\n'
+                      'print(pathlib.Path(sys.argv[1]).read_text(), end="", flush=True)\n'
+                      'print("diagnostic stderr", file=sys.stderr)\n')
+    client.chmod(0o755)
+    rdp = tmp_path / 'desktop.rdp'
+    launcher = RdpLauncher(sdl=str(client), sdl_libs='')
+    rdp.write_text('first connection\n')
+    assert launcher.launch(str(rdp)) == 0
+    first = {p: p.read_bytes() for p in output.glob('*.log')}
+    rdp.write_text('second connection\n')
+    assert launcher.launch(str(rdp)) == 0
+
+    assert len(list(output.glob('*.log'))) == 3
+    assert all(p.read_bytes() == content for p, content in first.items())
+    assert legacy.read_text() == 'previous session\n'
+    sessions = [p.read_text() for p in output.glob('feed_*.log')]
+    assert sorted(sessions) == ['first connection\ndiagnostic stderr\n',
+                                'second connection\ndiagnostic stderr\n']
+
+
+def test_log_paths_remain_unique_with_identical_timestamps(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from pathlib import Path
+    from avd_feed_connect.rdp import launcher
+
+    instant = datetime(2026, 10, 20, 19, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(launcher, 'datetime', SimpleNamespace(now=lambda tz: instant))
+    paths = [Path(launcher.session_log_path(tmp_path, 'session_desktop'))
+             for _ in range(20)]
+    assert len(set(paths)) == 20
+    assert all(p.parent == tmp_path for p in paths)
+    assert all(p.name.startswith('session_desktop_20261020T193000.000000Z_')
+               and p.suffix == '.log' for p in paths)

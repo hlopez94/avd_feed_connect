@@ -319,3 +319,38 @@ def test_touch_on_main_content_dismisses_open_menu(app, menu_name):
     app._on_menu_outside_pressed(None, 1, 20, app.win.get_height() - 20)
     drain()
     assert not popover.get_visible()
+
+
+def test_repeated_gui_connections_preserve_each_log(app, tmp_path, monkeypatch):
+    from pathlib import Path
+    a = add_saved(app, 'a', 'a@example.com')
+    app._select_account(a.id)
+    resource = a.resources[0]
+    child = app._child_for(resource['id'], a)
+    output = Path(a.client.output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    legacy = output / 'session_previous.log'
+    legacy.write_bytes(b'previous session\n')
+    rdp = tmp_path / 'desktop.rdp'
+    client = tmp_path / 'fake-freerdp'
+    client.write_text('#!/usr/bin/python3\n'
+                      'import pathlib, sys\n'
+                      'print(pathlib.Path(sys.argv[1]).read_text(), end="", flush=True)\n')
+    client.chmod(0o755)
+    monkeypatch.setattr(gui.config, 'SDL', str(client))
+    monkeypatch.setattr(gui, 'apply_client_hotkeys', lambda mode: None)
+    monkeypatch.setattr(app, '_ensure_token', lambda session: True)
+    monkeypatch.setattr(a.client, 'download_rdp', lambda token, res: str(rdp))
+
+    rdp.write_text('first connection\n')
+    app._launch(child, resource, False, a)
+    first = {p: p.read_bytes() for p in output.glob('session_*.log')}
+    rdp.write_text('second connection\n')
+    app._launch(child, resource, False, a)
+    assert len(list(output.glob('session_*.log'))) == 3
+    assert all(p.read_bytes() == content for p, content in first.items())
+    assert legacy.read_bytes() == b'previous session\n'
+    logs = [p.read_bytes() for p in output.glob('session_*.log') if p != legacy]
+    assert any(b'first connection' in content for content in logs)
+    assert any(b'second connection' in content for content in logs)
+    drain()
