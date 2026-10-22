@@ -58,6 +58,11 @@ modules:
         url: https://github.com/libsdl-org/SDL.git
         tag: release-3.2.30
         commit: f5e5f6588921eed3d7d048ce43d9eb1ff0da0ffc
+      # Failed remote clipboard reads must complete across XWayland too.
+      # Temporary backport of SDL#16568; remove with an SDL version containing it.
+      # Track the SDL update and patch removal in avd_feed_connect#49.
+      - type: patch
+        path: patches/sdl3-0001-x11-preserve-target-in-failed-selection-notify.patch
 
   - name: sdl3-ttf
     buildsystem: cmake-ninja

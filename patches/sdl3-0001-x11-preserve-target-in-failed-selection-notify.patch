@@ -1,0 +1,28 @@
+Subject: [PATCH] X11: preserve the requested target when a clipboard read fails
+
+A clipboard callback may return NULL when a remote format cannot be
+retrieved or converted. Keep the requested target in SelectionNotify even
+on failure; property=None is the failure indicator. Mutter matches replies
+by selection and target before checking property, so target=None leaves
+the Wayland reader waiting indefinitely.
+
+Reproduced with SDL 3.2.30 on GNOME Wayland using a callback that advertises
+text/html and returns NULL. wl-paste times out without this change and
+receives an empty response with it.
+
+Upstream: https://github.com/libsdl-org/SDL/pull/16568
+Tracking: https://github.com/shakeelosmani/avd_feed_connect/issues/49
+Remove this patch when the pinned SDL release includes the upstream fix.
+
+diff --git a/src/video/x11/SDL_x11events.c b/src/video/x11/SDL_x11events.c
+--- a/src/video/x11/SDL_x11events.c
++++ b/src/video/x11/SDL_x11events.c
+@@ -707,7 +707,7 @@
+         SDL_zero(sevent);
+         sevent.xany.type = SelectionNotify;
+         sevent.xselection.selection = req->selection;
+-        sevent.xselection.target = None;
++        sevent.xselection.target = req->target;
+         sevent.xselection.property = None; // tell them no by default
+         sevent.xselection.requestor = req->requestor;
+         sevent.xselection.time = req->time;
