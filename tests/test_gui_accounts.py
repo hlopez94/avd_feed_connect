@@ -956,3 +956,25 @@ def test_unknown_saved_shortcut_blocks_save(app):
     save = next(w for w in descendants(dialog) if isinstance(w, Gtk.Button) and w.get_label() == 'Save')
     assert not save.get_sensitive()
     dialog.destroy()
+
+
+def test_custom_shortcut_validation_follows_mode_values_when_reordered(app, monkeypatch):
+    pairs = list(zip(gui.storage.HOTKEY_VALUES, gui.storage.HOTKEY_LABELS))
+    pairs[2], pairs[3] = pairs[3], pairs[2]
+    monkeypatch.setattr(gui.storage, 'HOTKEY_VALUES', [value for value, _ in pairs])
+    monkeypatch.setattr(gui.storage, 'HOTKEY_LABELS', [label for _, label in pairs])
+    app._open_settings(None)
+    drain()
+    dialog = next(w for w in Gtk.Window.list_toplevels() if w.get_title() == 'Default connection settings')
+    mode = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+                and w.get_model().get_string(0) == 'Automatic (FreeRDP default)')
+    mode.set_selected(gui.storage.HOTKEY_VALUES.index('custom'))
+    save = next(w for w in descendants(dialog) if isinstance(w, Gtk.Button) and w.get_label() == 'Save')
+    checks = [w for w in descendants(dialog) if isinstance(w, Gtk.CheckButton)]
+    assert all(w.is_visible() for w in checks)
+    for check in checks:
+        check.set_active(False)
+    assert not save.get_sensitive()
+    mode.set_selected(gui.storage.HOTKEY_VALUES.index('off'))
+    assert save.get_sensitive()
+    dialog.destroy()

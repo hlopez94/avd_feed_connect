@@ -1887,14 +1887,15 @@ class AvdApp(Gtk.Application):
                                 xalign=0, wrap=True)
         shortcut_error.add_css_class("error")
         shortcut_box.append(shortcut_error)
+        custom_index = storage.HOTKEY_VALUES.index("custom")
         def validate_shortcuts(*_):
             valid = (any(check.get_active() for check in modifier_checks.values())
                      and all(dd.get_selected() < len(HOTKEY_KEYS) for dd in action_dropdowns.values())
                      and len({dd.get_selected() for dd in action_dropdowns.values()}) == len(action_dropdowns))
             shortcut_error.set_visible(not valid)
-            save.set_sensitive(hk_dd.get_selected() != 3 or valid)
+            save.set_sensitive(hk_dd.get_selected() != custom_index or valid)
         def update_shortcuts(*_):
-            shortcut_box.set_visible(hk_dd.get_selected() == 3)
+            shortcut_box.set_visible(hk_dd.get_selected() == custom_index)
             validate_shortcuts()
         hk_dd.connect("notify::selected", update_shortcuts)
         for check in modifier_checks.values():
