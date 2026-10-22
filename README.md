@@ -125,23 +125,6 @@ It also includes the **PulseAudio hot-unplug + rdpsnd busy-loop fixes**
 upstream) — without them, changing the audio device mid-call (e.g. plugging
 headphones during a Teams call) **freezes the whole session**.
 
-The bundled SDL also preserves the requested X11 target when a clipboard
-callback fails. Without this, GNOME's XWayland bridge ignores the failure
-response and a local application reading remote HTML can wait indefinitely.
-The fix completes failed reads; it does not recover HTML that FreeRDP could
-not retrieve or convert.
-
-This is a temporary backport of [SDL#16568](https://github.com/libsdl-org/SDL/pull/16568).
-[Issue #49](https://github.com/shakeelosmani/avd_feed_connect/issues/49) remains open
-until the bundled SDL is updated to a release containing that fix and the
-temporary patch is removed.
-
-To check this behavior on GNOME Wayland, run
-`python tests/manual/check_sdl_clipboard.py` against the installed Flatpak.
-This replaces the desktop clipboard with synthetic data and checks failed
-HTML reads, valid HTML, empty HTML, and plain text. Use
-`--library /absolute/path/to/libSDL3.so.0` to check a replacement SDL build.
-
 ## Install
 
 [![Latest release](https://img.shields.io/github/v/release/shakeelosmani/avd_feed_connect)](https://github.com/shakeelosmani/avd_feed_connect/releases/latest)
