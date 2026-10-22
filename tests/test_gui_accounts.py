@@ -562,7 +562,7 @@ def test_unified_launch_and_pending_callback_use_resource_owner(app, monkeypatch
     launched = []
     monkeypatch.setattr(gui.threading, 'Thread', lambda target, args, daemon:
                         SimpleNamespace(start=lambda: target(*args)))
-    monkeypatch.setattr(app, '_launch', lambda child, resource, windowed, owner:
+    monkeypatch.setattr(app, '_launch', lambda child, resource, windowed, owner, attempt=None:
                         launched.append((child._account.id, owner.id, resource['id'], windowed)))
     app._on_tile_activated(app.grid, app._child_for('same', b), windowed=True)
     assert launched == [(b.id, b.id, 'same', True)]
@@ -845,3 +845,89 @@ def test_localization_registrations_follow_native_lifetime_without_language_refr
     gc.collect()
     # No configure/refresh call is needed to remove dead registrations.
     assert tuple(map(len, registries)) == baseline
+
+
+def descendants(widget):
+    yield widget
+    child = widget.get_first_child()
+    while child:
+        yield from descendants(child)
+        child = child.get_next_sibling()
+
+
+def test_cancel_pending_connection_allows_retry_without_touching_connected_session(app):
+    from avd_feed_connect.rdp.attempt import ConnectionAttempt
+    owner = add_saved(app, 'cancel', 'test@example.test')
+    app._select_account(owner.id)
+    res = owner.resources[0]; child = app._child_for(res['id'], owner)
+    attempt = ConnectionAttempt();child._attempt=attempt;child._launching=True
+    attempt.is_current = lambda: child._attempt is attempt
+    app._set_connecting(res['id'],res['title'],True,owner)
+    other = add_saved(app, 'connected', 'other@example.test')
+    app._set_tile_state(other.resources[0]['id'],'state-connected',other)
+    drain()
+    app._cancel_connection(child,res,owner,attempt)
+    drain()
+    assert attempt.cancelled.is_set()
+    assert not child._launching
+    assert not app._connect_overlay.get_visible()
+    assert app._sessions[(other.id,other.resources[0]['id'])]=='connected'
+    assert child._proc is None
+
+
+def test_cancelled_attempt_cannot_restore_overlay_or_connected_state(app):
+    from avd_feed_connect.rdp.attempt import ConnectionAttempt
+    owner=add_saved(app,'cancel','test@example.test');app._select_account(owner.id)
+    res=owner.resources[0];child=app._child_for(res['id'],owner)
+    old=ConnectionAttempt();child._attempt=old;old.is_current=lambda: child._attempt is old
+    app._set_connecting(res['id'],res['title'],True,owner,attempt=old)
+    old.cancel()
+    new=ConnectionAttempt();child._attempt=new;new.is_current=lambda: child._attempt is new
+    app._set_tile_state(res['id'],'state-connecting',owner,attempt=new)
+    app._set_tile_state(res['id'],'state-connected',owner,attempt=old)
+    drain()
+    assert app._sessions[(owner.id,res['id'])]=='connecting'
+    assert (owner.id,res['id']) not in app._connecting
+
+
+def test_cancelled_launch_never_downloads_or_starts_client(app, monkeypatch):
+    from avd_feed_connect.rdp.attempt import ConnectionAttempt
+    owner=add_saved(app,'cancel','test@example.test');app._select_account(owner.id)
+    res=owner.resources[0];child=app._child_for(res['id'],owner)
+    attempt=ConnectionAttempt();attempt.cancel()
+    monkeypatch.setattr(app,'_ensure_token',lambda *_: pytest.fail('cancelled launch must not authenticate'))
+    app._launch(child,res,False,owner,attempt)
+
+
+def test_closing_connection_login_cancels_immediately(app, monkeypatch):
+    from avd_feed_connect.rdp.attempt import ConnectionAttempt
+    owner=add_saved(app,'close-auth','test@example.test');app._select_account(owner.id)
+    res=owner.resources[0];child=app._child_for(res['id'],owner)
+    attempt=ConnectionAttempt();child._attempt=attempt;child._launching=True
+    attempt.is_current=lambda: child._attempt is attempt
+    # Exercise real GTK close-request without any navigation or remote service.
+    monkeypatch.setattr(gui.WebKit.WebView, 'load_uri', lambda *_: None)
+    app._set_connecting(res['id'],res['title'],True,owner,attempt=attempt)
+    app._resolve_aad(-1,'https://login.microsoftonline.com/common',res,owner,attempt)
+    window=next(w for w in Gtk.Window.list_toplevels() if w.get_title() == 'Sign in — '+res['title'])
+    window.emit('close-request')
+    drain()
+    assert attempt.cancelled.is_set()
+    assert attempt.close_auth is None
+    assert not child._launching
+    assert not app._connect_overlay.get_visible()
+
+
+def test_overlay_close_button_cancels_pending_attempt(app):
+    from avd_feed_connect.rdp.attempt import ConnectionAttempt
+    owner=add_saved(app,'button','test@example.test');app._select_account(owner.id)
+    res=owner.resources[0];child=app._child_for(res['id'],owner)
+    attempt=ConnectionAttempt();child._attempt=attempt;child._launching=True
+    attempt.is_current=lambda: child._attempt is attempt
+    app._set_connecting(res['id'],res['title'],True,owner,attempt=attempt)
+    drain()
+    assert app._connect_overlay.get_can_target()
+    button=next(w for w in descendants(app._connect_overlay) if isinstance(w,Gtk.Button))
+    button.emit('clicked');drain()
+    assert attempt.cancelled.is_set()
+    assert not app._connect_overlay.get_visible()

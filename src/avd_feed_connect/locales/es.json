@@ -126,5 +126,7 @@
   "Use Default settings": "Usar configuración predeterminada",
   "Enabled": "Activado",
   "Disabled": "Desactivado",
-  "Language…": "Idioma…"
+  "Language…": "Idioma…",
+  "Cancel pending connections": "Cancelar conexiones pendientes",
+  "Connection cancelled": "Conexión cancelada"
 }

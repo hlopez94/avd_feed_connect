@@ -74,6 +74,7 @@ from avd_feed_connect import config, http  # noqa: E402
 from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
 from avd_feed_connect.gui.workspaces import select_backend as workspace_backend  # noqa: E402
+from avd_feed_connect.rdp.attempt import ConnectionAttempt  # noqa: E402
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
     apply_client_hotkeys, build_display_args, session_log_path)
 from avd_feed_connect.i18n import _ as tr, ngettext, configure, LANGUAGES  # noqa: E402
@@ -618,7 +619,13 @@ class AvdApp(Gtk.Application):
         csub = create(Gtk.Label, label=tr("Securing your session")); csub.add_css_class("connect-sub")
         cbox.append(self._connect_spinner); cbox.append(self._connect_label); cbox.append(csub)
         cbox.set_visible(False)
-        cbox.set_can_target(False)
+        cancel_connect = Gtk.Button.new_from_icon_name("window-close-symbolic")
+        bind(cancel_connect, 'tooltip_text', tr("Cancel pending connections"))
+        cancel_connect.set_halign(Gtk.Align.END)
+        cancel_connect.add_css_class("flat")
+        cancel_connect.connect("clicked", lambda *_: self._cancel_visible_connections())
+        cbox.prepend(cancel_connect)
+        cbox.set_can_target(True)
         self._connect_overlay = cbox
         overlay.add_overlay(cbox)
         wp.append(overlay)
@@ -666,8 +673,11 @@ class AvdApp(Gtk.Application):
         if not window.is_active():
             self._dismiss_menus()
 
-    def _set_status(self, text, session=None, reauth=False):
+    def _set_status(self, text, session=None, reauth=False, attempt=None, allow_cancelled=False):
         def apply():
+            if attempt is not None and (not attempt.is_current()
+                    or (attempt.cancelled.is_set() and not allow_cancelled)):
+                return False
             if session is not None:
                 session.view_status = text
                 session.needs_signin = reauth
@@ -695,7 +705,7 @@ class AvdApp(Gtk.Application):
         initials = (parts[0][:1] + (parts[1][:1] if len(parts) > 1 else user[1:2]))
         bind(self._avatar_lbl, 'text', initials.upper() or "?")
 
-    def _set_connecting(self, res_id, title, on, session=None):
+    def _set_connecting(self, res_id, title, on, session=None, attempt=None, allow_cancelled=False):
         """Show/hide the centered 'Connecting…' spinner overlay. Safe to call
         from any thread. The overlay stays up while any session is connecting."""
         session = session or self.current
@@ -703,6 +713,9 @@ class AvdApp(Gtk.Application):
             return
         key = (session.id, res_id)
         def apply():
+            if attempt is not None and (not attempt.is_current()
+                    or (attempt.cancelled.is_set() and not allow_cancelled)):
+                return False
             if on and not session.removed:
                 self._connecting.add(key)
             else:
@@ -1220,7 +1233,7 @@ class AvdApp(Gtk.Application):
         session = session or self.current
         return session.tiles.get(res_id) if session else None
 
-    def _set_tile_state(self, res_id, css, session=None):
+    def _set_tile_state(self, res_id, css, session=None, attempt=None, allow_cancelled=False):
         session = session or self.current
         if session is None:
             return
@@ -1228,6 +1241,9 @@ class AvdApp(Gtk.Application):
         # Render session state as a corner pill: amber "Connecting", green
         # "Connected", hidden when idle. (css: state-connecting/connected/ended)
         def apply():
+            if attempt is not None and (not attempt.is_current()
+                    or (attempt.cancelled.is_set() and not allow_cancelled)):
+                return False
             if css in ("state-connecting", "state-connected"):
                 self._sessions[key] = css[len("state-"):]
             else:
@@ -1306,36 +1322,84 @@ class AvdApp(Gtk.Application):
         if getattr(child, "_launching", False) or (child._proc and child._proc.poll() is None):
             self._set_status(tr("{resource} is already open").format(resource=res['title']), session)
             return
+        attempt = ConnectionAttempt()
+        child._attempt = attempt
+        attempt.is_current = lambda: getattr(child, "_attempt", None) is attempt
         child._launching = True
-        self._set_tile_state(res["id"], "state-connecting", session)
-        self._set_status(tr("Connecting to {resource}…").format(resource=res['title']), session)
-        self._set_connecting(res["id"], res["title"], True, session)
-        threading.Thread(target=self._launch, args=(child, res, windowed, session),
+        self._set_tile_state(res["id"], "state-connecting", session, attempt=attempt)
+        self._set_status(tr("Connecting to {resource}…").format(resource=res['title']), session, attempt=attempt)
+        self._set_connecting(res["id"], res["title"], True, session, attempt=attempt)
+        threading.Thread(target=self._launch, args=(child, res, windowed, session, attempt),
                          daemon=True).start()
 
-    def _launch(self, child, res, windowed, session):
-        if not self._ensure_token(session):
+    def _cancel_visible_connections(self):
+        for account_id, resource_id in tuple(self._connecting):
+            if self.view_mode != "all" and account_id != self.selected_id:
+                continue
+            session = self.accounts.get(account_id)
+            child = self._child_for(resource_id, session) if session else None
+            if child:
+                self._cancel_connection(child, child._res, session, getattr(child, "_attempt", None))
+
+    def _cancel_connection(self, child, res, session, attempt):
+        if attempt is None or not attempt.is_current():
+            return
+        attempt.cancel()
+        close_auth, attempt.close_auth = attempt.close_auth, None
+        if close_auth:
+            close_auth()
+        child._launching = False
+        child._proc = None
+        if session.pending_launch and session.pending_launch[0] == res["id"]:
+            session.pending_launch = None
+        # Guard the deferred cleanup by identity, even though this attempt is cancelled.
+        def clear():
+            if attempt.is_current():
+                self._set_connecting(res["id"], res["title"], False, session, attempt=attempt, allow_cancelled=True)
+                self._set_tile_state(res["id"], None, session, attempt=attempt, allow_cancelled=True)
+                self._set_status(tr("Connection cancelled"), session, attempt=attempt, allow_cancelled=True)
+            return GLib.SOURCE_REMOVE
+        clear()
+
+    def _launch(self, child, res, windowed, session, attempt=None):
+        if attempt is None:
+            attempt = ConnectionAttempt()
+            child._attempt = attempt
+            attempt.is_current = lambda: getattr(child, "_attempt", None) is attempt
+        if not attempt.active():
+            return
+        token_ready = self._ensure_token(session)
+        if not attempt.active():
+            return
+        if not token_ready:
             # Session lapsed and can't refresh silently — re-auth on demand
             # (like the Windows App when you click a workspace after a while),
             # keeping the workspace list intact.
-            child._launching = False
-            self._set_connecting(res["id"], res["title"], False, session)
-            self._set_tile_state(res["id"], None, session)
-            self._set_status(tr("Sign in to connect"), session)
+            if attempt.is_current():
+                child._launching = False
+            self._set_connecting(res["id"], res["title"], False, session, attempt=attempt)
+            self._set_tile_state(res["id"], None, session, attempt=attempt)
+            self._set_status(tr("Sign in to connect"), session, attempt=attempt)
             session.pending_launch = (res["id"], windowed)   # connect automatically afterwards
-            GLib.idle_add(self._interactive_signin, session)
+            GLib.idle_add(lambda: self._interactive_signin(session) if attempt.active() else False)
             return
         try:
             with session.refresh_lock:
-                if session.removed:
-                    child._launching = False
+                if session.removed or not attempt.active():
+                    if attempt.is_current():
+                        child._launching = False
                     return
                 path = session.client.download_rdp(session.token, res)
+                if not attempt.active():
+                    return
         except (SystemExit, Exception) as e:  # never let a write/HTTP error hang the tile
-            child._launching = False
-            self._set_connecting(res["id"], res["title"], False, session)
+            if not attempt.active():
+                return
+            if attempt.is_current():
+                child._launching = False
+            self._set_connecting(res["id"], res["title"], False, session, attempt=attempt)
             self._error(str(e))
-            self._set_tile_state(res["id"], "state-ended", session)
+            self._set_tile_state(res["id"], "state-ended", session, attempt=attempt)
             return
         # Host pools not set up for Entra ID RDP auth (their feed .rdp lacks
         # "enablerdsaadauth:i:1") reject /sec:aad with HYBRID_REQUIRED_BY_SERVER
@@ -1418,9 +1482,12 @@ class AvdApp(Gtk.Application):
         try:
             argv += build_display_args(path, extra, want_multimon)
         except (OSError, ValueError) as error:
-            child._launching = False
-            self._set_connecting(res["id"], res["title"], False, session)
-            self._set_tile_state(res["id"], "state-ended", session)
+            if not attempt.active():
+                return
+            if attempt.is_current():
+                child._launching = False
+            self._set_connecting(res["id"], res["title"], False, session, attempt=attempt)
+            self._set_tile_state(res["id"], "state-ended", session, attempt=attempt)
             self._error(tr("Could not prepare display settings: {error}").format(error=error))
             return
         backend = workspace_backend()
@@ -1439,37 +1506,48 @@ class AvdApp(Gtk.Application):
         # connection-time token silent. A new process group lets us tear down
         # the whole FreeRDP tree cleanly.
         with session.refresh_lock:
-            if session.removed:
-                child._launching = False
-                self._set_connecting(res["id"], res["title"], False, session)
+            if session.removed or not attempt.active():
+                if attempt.is_current():
+                    child._launching = False
+                self._set_connecting(res["id"], res["title"], False, session, attempt=attempt)
                 return
             master, slave = pty.openpty()
             try:
                 proc = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave,
                                         stderr=slave, start_new_session=True,
                                         close_fds=True)
+                attempt.attach(proc)
             except Exception as error:
                 os.close(master)
-                child._launching = False
-                self._set_connecting(res["id"], res["title"], False, session)
-                self._set_tile_state(res["id"], None, session)
+                if not attempt.active():
+                    return
+                if attempt.is_current():
+                    child._launching = False
+                self._set_connecting(res["id"], res["title"], False, session, attempt=attempt)
+                self._set_tile_state(res["id"], None, session, attempt=attempt)
                 self._error(tr("Could not launch FreeRDP: {error}").format(error=error))
                 return
             finally:
                 os.close(slave)
-        child._workspace_placement = backend.create_placement(proc, workspace_title) if workspace_title else None
-        child._proc = proc
-        child._ptym = master
+        def publish():
+            child._workspace_placement = backend.create_placement(proc, workspace_title) if workspace_title else None
+            child._proc = proc
+            child._ptym = master
+        if not attempt.publish(publish):
+            attempt.cancel()
+            os.close(master)
+            return
         GLib.idle_add(self._tray_refresh)    # Focus/Disconnect now apply
-        self._set_status(tr("Launched {resource}").format(resource=res['title']), session)
-        self._watch_session(child, res, proc, master, logpath, session)
+        self._set_status(tr("Launched {resource}").format(resource=res['title']), session, attempt=attempt)
+        self._watch_session(child, res, proc, master, logpath, session, attempt)
 
     _ANSI = _re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
 
-    def _watch_session(self, child, res, proc, master, logpath, session):
+    def _watch_session(self, child, res, proc, master, logpath, session, attempt=None):
         """Read sdl-freerdp's PTY output: flip the tile to 'Connected' on logon,
         service each 'Browse to:' AAD prompt silently, and tidy up on exit."""
-        state = {"connected": False}
+        attempt = attempt or getattr(child, "_attempt", None)
+        state = {"connected": False, "attempt": attempt}
         buf = b""
         try:
             log = open(logpath, "xb")
@@ -1507,28 +1585,39 @@ class AvdApp(Gtk.Application):
                 os.close(master)
             except OSError:
                 pass
+        if attempt is not None and attempt.close_auth:
+            def close_pending_auth():
+                if attempt.close_auth:
+                    attempt.close_auth()
+                return GLib.SOURCE_REMOVE
+            GLib.idle_add(close_pending_auth)
+        if attempt is not None and not attempt.active():
+            return
         child._launching = False
-        self._set_connecting(res["id"], res["title"], False, session)  # ensure overlay clears
-        self._set_tile_state(res["id"], "state-ended", session)
-        self._set_status(tr("{resource} session ended").format(resource=res['title']), session)
+        self._set_connecting(res["id"], res["title"], False, session, attempt=attempt)  # ensure overlay clears
+        self._set_tile_state(res["id"], "state-ended", session, attempt=attempt)
+        self._set_status(tr("{resource} session ended").format(resource=res['title']), session, attempt=attempt)
         GLib.timeout_add_seconds(
-            6, lambda: (self._set_tile_state(res["id"], None, session), False)[1])
+            6, lambda: (self._set_tile_state(res["id"], None, session, attempt=attempt), False)[1])
 
     def _on_freerdp_line(self, child, res, master, line, state, session):
         """Handle one line of FreeRDP output (called from the reader thread)."""
+        attempt = state.get("attempt", getattr(child, "_attempt", None))
+        if attempt is not None and not attempt.active():
+            return
         if not state["connected"] and "Logon Info" in line:
             state["connected"] = True
             placement = getattr(child, "_workspace_placement", None)
             if placement:
                 GLib.idle_add(placement.start)
-            self._set_tile_state(res["id"], "state-connected", session)
-            self._set_status(tr("Connected to {resource}").format(resource=res['title']), session)
-            self._set_connecting(res["id"], res["title"], False, session)  # desktop is up
+            self._set_tile_state(res["id"], "state-connected", session, attempt=attempt)
+            self._set_status(tr("Connected to {resource}").format(resource=res['title']), session, attempt=attempt)
+            self._set_connecting(res["id"], res["title"], False, session, attempt=attempt)  # desktop is up
         if line.startswith("Browse to: "):
             url = line[len("Browse to: "):].strip()
             if config.is_aad_login_url(url):
                 # Resolve on the main thread (WebKit must run there).
-                GLib.idle_add(self._resolve_aad, master, url, res, session)
+                GLib.idle_add(self._resolve_aad, master, url, res, session, attempt)
             else:
                 # Never load an arbitrary URL in the SSO-cookie WebView; a blank
                 # line makes FreeRDP abort this auth instead of blocking on stdin.
@@ -1538,37 +1627,48 @@ class AvdApp(Gtk.Application):
                 except OSError:
                     pass
 
-    def _resolve_aad(self, master, url, res, session):
-        """Service FreeRDP's connection-time AAD prompt: load its authorize URL
-        in a hidden webview sharing our SSO cookies, and write the resulting
-        redirect URL back to FreeRDP's stdin. The window is shown only if it
-        doesn't resolve silently within 3s (i.e. MFA/consent is really needed)."""
-        if session.removed:
-            try:
-                os.write(master, b"\n")
-            except OSError:
-                pass
+    def _resolve_aad(self, master, url, res, session, attempt=None):
+        """Resolve one connection's AAD prompt; closing it cancels its attempt."""
+        if session.removed or (attempt is not None and not attempt.active()):
             return False
         wv = WebKit.WebView(network_session=self._web_session(session))
-        self._apply_ua(wv)   # account-wide sign-in UA, must match sign-in (issue #28)
-        # Unpresented window: a WebView loads/navigates while its window is
-        # hidden (verified), so the silent path never flashes a window.
+        self._apply_ua(wv)
         win = create(Gtk.Window, title=tr("Sign in — {resource}").format(resource=res['title']), transient_for=self.win)
         win.set_default_size(520, 640)
         win.set_child(wv)
-        holder = {"done": False, "shown": False}
+        holder = {"done": False, "shown": False, "timer": 0}
 
-        def finish(redirect_uri):
+        def finish(redirect_uri=None):
             if holder["done"]:
                 return
             holder["done"] = True
-            try:
-                os.write(master, (redirect_uri + "\n").encode())
-            except OSError:
-                pass
+            if holder["timer"]:
+                GLib.source_remove(holder["timer"])
+                holder["timer"] = 0
+            wv.stop_loading()
+            if attempt is not None and attempt.close_auth is close_auth:
+                attempt.close_auth = None
+            if redirect_uri and not session.removed and (attempt is None or attempt.active()):
+                try:
+                    os.write(master, (redirect_uri + "\n").encode())
+                except OSError:
+                    pass
+            elif attempt is not None and not attempt.cancelled.is_set():
+                child = self._child_for(res["id"], session)
+                if child:
+                    self._cancel_connection(child, res, session, attempt)
+                else:
+                    attempt.cancel()
             win.destroy()
 
+        def close_auth(*_):
+            finish()
+            return True
+
         def on_decide(view, decision, dtype):
+            if holder["done"]:
+                decision.ignore()
+                return True
             if dtype == WebKit.PolicyDecisionType.NAVIGATION_ACTION:
                 uri = decision.get_navigation_action().get_request().get_uri()
                 if "nativeclient" in uri and "code=" in uri:
@@ -1577,29 +1677,24 @@ class AvdApp(Gtk.Application):
                     return True
             return False
 
-        def on_destroy(*_):
-            # Window closed before it resolved (user cancelled): send a blank
-            # line so FreeRDP aborts this auth instead of blocking on stdin.
-            if not holder["done"]:
-                holder["done"] = True
-                try:
-                    os.write(master, b"\n")
-                except OSError:
-                    pass
-
-        wv.connect("create", lambda *_a: None)     # block popups (no ghost windows)
+        wv.connect("create", lambda *_a: None)
         wv.connect("decide-policy", on_decide)
-        win.connect("close-request", lambda w: (w.destroy(), True)[1])
-        win.connect("destroy", on_destroy)
+        win.connect("close-request", close_auth)
+        win.connect("destroy", close_auth)
+        if attempt is not None:
+            attempt.close_auth = close_auth
         wv.load_uri(url)
 
         def show_if_pending():
-            if not holder["done"] and not holder["shown"]:
+            holder["timer"] = 0
+            if session.removed or (attempt is not None and not attempt.active()):
+                finish()
+            elif not holder["done"] and not holder["shown"]:
                 holder["shown"] = True
-                self._set_status(tr("Signing in to {resource}…").format(resource=res['title']), session)
+                self._set_status(tr("Signing in to {resource}…").format(resource=res['title']), session, attempt=attempt)
                 win.present()
             return False
-        GLib.timeout_add(3000, show_if_pending)
+        holder["timer"] = GLib.timeout_add(3000, show_if_pending)
         return False
 
     # ---- tray icon ---------------------------------------------------------
