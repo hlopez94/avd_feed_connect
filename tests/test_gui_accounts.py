@@ -845,3 +845,114 @@ def test_localization_registrations_follow_native_lifetime_without_language_refr
     gc.collect()
     # No configure/refresh call is needed to remove dead registrations.
     assert tuple(map(len, registries)) == baseline
+
+def descendants(widget):
+    yield widget
+    child = widget.get_first_child()
+    while child:
+        yield from descendants(child)
+        child = child.get_next_sibling()
+
+
+def test_custom_shortcuts_roundtrip_in_default_settings(app):
+    app._open_settings(None)
+    drain()
+    dialog = next(w for w in Gtk.Window.list_toplevels() if w.get_title() == 'Default connection settings')
+    mode = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+                and w.get_model().get_string(0) == 'Automatic (FreeRDP default)')
+    mode.set_selected(3)
+    drain()
+    modifiers = {w.get_label(): w for w in descendants(dialog) if isinstance(w, Gtk.CheckButton)}
+    modifiers['Right Ctrl'].set_active(True)
+    modifiers['Right Shift'].set_active(True)
+    disconnect = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+                      and w.get_name() == 'SDL_Disconnect')
+    disconnect.set_selected(37)  # F12, after A-Z and F1-F11
+    next(w for w in descendants(dialog) if isinstance(w, Gtk.Button) and w.get_label() == 'Save').emit('clicked')
+    saved = gui.storage.load_settings()['_default']['hotkeys']
+    assert set(saved['modifiers']) == {'KMOD_RSHIFT', 'KMOD_RCTRL'}
+    assert saved['bindings']['SDL_Disconnect'] == 'SDL_SCANCODE_F12'
+    app._open_settings(None)
+    drain()
+    dialog = next(w for w in Gtk.Window.list_toplevels() if w.get_title() == 'Default connection settings')
+    mode = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+                and w.get_model().get_string(0) == 'Automatic (FreeRDP default)')
+    assert mode.get_selected() == 3
+    dialog.destroy()
+
+
+
+def test_custom_shortcuts_validate_and_translate_live(app):
+    app._open_settings(None)
+    drain()
+    dialog = next(w for w in Gtk.Window.list_toplevels() if w.get_title() == 'Default connection settings')
+    mode = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+                and w.get_model().get_string(0) == 'Automatic (FreeRDP default)')
+    mode.set_selected(3)
+    save = next(w for w in descendants(dialog) if isinstance(w, Gtk.Button) and w.get_label() == 'Save')
+    checks = [w for w in descendants(dialog) if isinstance(w, Gtk.CheckButton)]
+    for check in checks:
+        check.set_active(False)
+    assert not save.get_sensitive()
+    checks[1].set_active(True)
+    assert save.get_sensitive()
+    actions = {w.get_name(): w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+               and w.get_name().startswith('SDL_')}
+    actions['SDL_Disconnect'].set_selected(actions['SDL_Minimize'].get_selected())
+    assert not save.get_sensitive()
+    next(w for w in descendants(dialog) if isinstance(w, Gtk.Button)
+         and w.get_label() == 'Restore FreeRDP shortcuts').emit('clicked')
+    assert save.get_sensitive()
+    assert [check.get_label() for check in checks if check.get_active()] == ['Right Shift']
+    assert actions['SDL_Disconnect'].get_selected() == 3  # D
+    for language in ('es-AR', 'es-419', 'es-ES'):
+        app._set_language(language)
+        assert checks[1].get_label() == 'Ctrl derecho'
+        assert save.get_label() == 'Guardar'
+        assert any(isinstance(w, Gtk.Label) and w.get_text() == 'Restablecer atajos de FreeRDP'
+                   for w in descendants(dialog))
+        assert mode.get_selected() == 4
+    app._set_language('en')
+    dialog.destroy()
+
+
+def test_custom_shortcuts_inherit_and_override_per_resource(app):
+    owner = add_saved(app, 'a', 'a@example.com')
+    resource = owner.resources[0]
+    custom = {'modifiers': ['KMOD_RCTRL', 'KMOD_RSHIFT'], 'bindings': {
+        'SDL_Disconnect': 'SDL_SCANCODE_D', 'SDL_Minimize': 'SDL_SCANCODE_M',
+        'SDL_Fullscreen': 'SDL_SCANCODE_RETURN', 'SDL_Resizeable': 'SDL_SCANCODE_R',
+        'SDL_Grab': 'SDL_SCANCODE_G'}}
+    app._settings['_default'] = {'hotkeys': custom}
+    assert app._eff('hotkeys', resource, owner) == custom
+    owner.resource_settings[resource['id']] = {'hotkeys': 'off'}
+    assert app._eff('hotkeys', resource, owner) == 'off'
+    owner.resource_settings[resource['id']] = {'hotkeys': 'auto'}
+    assert app._eff('hotkeys', resource, owner) == custom
+
+
+def test_restore_shortcuts_persists_defaults_mode(app):
+    app._open_settings(None)
+    drain()
+    dialog = next(w for w in Gtk.Window.list_toplevels() if w.get_title() == 'Default connection settings')
+    mode = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+                and w.get_model().get_string(0) == 'Automatic (FreeRDP default)')
+    mode.set_selected(3)
+    next(w for w in descendants(dialog) if isinstance(w, Gtk.Button)
+         and w.get_label() == 'Restore FreeRDP shortcuts').emit('clicked')
+    next(w for w in descendants(dialog) if isinstance(w, Gtk.Button)
+         and w.get_label() == 'Save').emit('clicked')
+    assert gui.storage.load_settings()['_default']['hotkeys'] == 'defaults'
+
+
+def test_unknown_saved_shortcut_blocks_save(app):
+    from avd_feed_connect.rdp.launcher import HOTKEY_DEFAULTS
+    app._settings['_default'] = {'hotkeys': {
+        'modifiers': ['KMOD_RSHIFT'],
+        'bindings': dict(HOTKEY_DEFAULTS, SDL_Disconnect='SDL_SCANCODE_UNKNOWN')}}
+    app._open_settings(None)
+    drain()
+    dialog = next(w for w in Gtk.Window.list_toplevels() if w.get_title() == 'Default connection settings')
+    save = next(w for w in descendants(dialog) if isinstance(w, Gtk.Button) and w.get_label() == 'Save')
+    assert not save.get_sensitive()
+    dialog.destroy()

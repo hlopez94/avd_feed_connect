@@ -256,3 +256,63 @@ def test_log_paths_remain_unique_with_identical_timestamps(tmp_path, monkeypatch
     assert all(p.parent == tmp_path for p in paths)
     assert all(p.name.startswith('session_desktop_20261020T193000.000000Z_')
                and p.suffix == '.log' for p in paths)
+
+
+def test_custom_hotkeys_write_all_actions_and_preserve_other_preferences(tmp_path):
+    import json
+    from avd_feed_connect.rdp.launcher import apply_client_hotkeys
+    path = tmp_path / 'sdl-freerdp.json'
+    path.write_text('{"unrelated": 42}')
+    custom = {'modifiers': ['KMOD_RCTRL', 'KMOD_RSHIFT'], 'bindings': {
+        'SDL_Disconnect': 'SDL_SCANCODE_F12', 'SDL_Minimize': 'SDL_SCANCODE_M',
+        'SDL_Fullscreen': 'SDL_SCANCODE_RETURN', 'SDL_Resizeable': 'SDL_SCANCODE_R',
+        'SDL_Grab': 'SDL_SCANCODE_G'}}
+    assert apply_client_hotkeys(custom, str(path))
+    data = json.loads(path.read_text())
+    assert data['SDL_KeyModMask'] == ['KMOD_RCTRL', 'KMOD_RSHIFT']
+    assert data['SDL_Disconnect'] == 'SDL_SCANCODE_F12'
+    assert data['unrelated'] == 42
+    assert apply_client_hotkeys('on', str(path))
+    assert json.loads(path.read_text())['SDL_Disconnect'] == 'SDL_SCANCODE_F12'
+
+
+def test_invalid_custom_hotkeys_do_not_modify_config(tmp_path):
+    from avd_feed_connect.rdp.launcher import apply_client_hotkeys
+    path = tmp_path / 'sdl-freerdp.json'
+    path.write_text('{}')
+    for value in ({'modifiers': [], 'bindings': {}},
+                  {'modifiers': ['INVALID'], 'bindings': {}},
+                  {'modifiers': ['KMOD_RSHIFT'], 'bindings': {'SDL_Disconnect': 'INVALID'}}):
+        assert not apply_client_hotkeys(value, str(path))
+        assert path.read_text() == '{}'
+
+
+def test_restore_hotkeys_removes_only_managed_overrides(tmp_path):
+    import json
+    from avd_feed_connect.rdp.launcher import apply_client_hotkeys, HOTKEY_DEFAULTS
+    path = tmp_path / 'sdl.json'
+    path.write_text(json.dumps(dict(HOTKEY_DEFAULTS, SDL_KeyModMask=['KMOD_RCTRL'], unrelated=42)))
+    assert apply_client_hotkeys('defaults', str(path))
+    assert json.loads(path.read_text()) == {'unrelated': 42}
+
+
+def test_custom_hotkeys_preserve_unreadable_and_non_object_files(tmp_path):
+    from avd_feed_connect.rdp.launcher import apply_client_hotkeys, HOTKEY_DEFAULTS
+    path = tmp_path / 'sdl.json'
+    custom = {'modifiers': ['KMOD_RCTRL'], 'bindings': dict(HOTKEY_DEFAULTS)}
+    for content in ('not JSON', '[]', 'null'):
+        path.write_text(content)
+        assert not apply_client_hotkeys(custom, str(path))
+        assert path.read_text() == content
+
+
+def test_custom_hotkeys_reject_duplicate_unknown_and_malformed_keys(tmp_path):
+    from avd_feed_connect.rdp.launcher import apply_client_hotkeys, HOTKEY_DEFAULTS
+    path = tmp_path / 'sdl.json'
+    path.write_text('{"keep": true}')
+    for bindings in (dict(HOTKEY_DEFAULTS, SDL_Disconnect='SDL_SCANCODE_M'),
+                     dict(HOTKEY_DEFAULTS, SDL_Disconnect='SDL_SCANCODE_UNKNOWN'),
+                     dict(HOTKEY_DEFAULTS, SDL_Disconnect=[])):
+        assert not apply_client_hotkeys({'modifiers': ['KMOD_RSHIFT'], 'bindings': bindings}, str(path))
+        assert path.read_text() == '{"keep": true}'
+    assert not apply_client_hotkeys({'modifiers': [{}], 'bindings': dict(HOTKEY_DEFAULTS)}, str(path))

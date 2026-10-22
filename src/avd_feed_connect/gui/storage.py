@@ -37,8 +37,8 @@ CERT_VALUES = ["auto", "verify", "ignore"]
 # toggles fullscreen). "auto" leaves FreeRDP's config untouched; "off" passes every
 # key through to the remote desktop.
 HOTKEY_LABELS = ["Automatic (FreeRDP default)", "Enabled (Right Shift + key)",
-                 "Disabled (send all keys to the PC)"]
-HOTKEY_VALUES = ["auto", "on", "off"]
+                 "Disabled (send all keys to the PC)", "Custom…", "FreeRDP defaults"]
+HOTKEY_VALUES = ["auto", "on", "off", "custom", "defaults"]
 
 # Workspace placement can inherit per resource; application defaults cannot.
 WORKSPACE_LABELS = ["Use Default settings", "Enabled", "Disabled"]

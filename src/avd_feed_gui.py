@@ -75,7 +75,8 @@ from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
 from avd_feed_connect.gui.workspaces import select_backend as workspace_backend  # noqa: E402
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
-    apply_client_hotkeys, build_display_args, session_log_path)
+    apply_client_hotkeys, build_display_args, session_log_path,
+    HOTKEY_MODIFIER_NAMES, HOTKEY_DEFAULTS, HOTKEY_ACTIONS, HOTKEY_KEYS)
 from avd_feed_connect.i18n import _ as tr, ngettext, configure, LANGUAGES  # noqa: E402
 from avd_feed_connect.gui.localization import bind, create, strings  # noqa: E402
 from avd_feed_connect.gui.theme import CSS_BASE, PALETTE_DARK, PALETTE_LIGHT  # noqa: E402
@@ -1836,8 +1837,72 @@ class AvdApp(Gtk.Application):
 
         hk_dd = create(Gtk.DropDown, model=strings([tr(label) for label in storage.HOTKEY_LABELS]))
         hv = cur.get("hotkeys", "auto")
+        custom_hotkeys = hv if isinstance(hv, dict) else {}
+        hv = "custom" if isinstance(hv, dict) else hv
         hk_dd.set_selected(storage.HOTKEY_VALUES.index(hv) if hv in storage.HOTKEY_VALUES else 0)
         box.append(self._form_row(tr("Client shortcuts"), hk_dd))
+
+        hotkey_note = create(Gtk.Label,
+            label=tr("Right Shift + D disconnects. Choose Disabled to send all keys to the remote PC, or Custom to change shortcuts. All actions share the same modifiers."),
+            xalign=0, wrap=True)
+        hotkey_note.add_css_class("tile-sub")
+        box.append(hotkey_note)
+
+        shortcut_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        shortcut_note = create(Gtk.Label, label=tr("Hold all selected modifiers, then press the action key."),
+                               xalign=0, wrap=True)
+        shortcut_box.append(shortcut_note)
+        modifier_grid = Gtk.Grid(column_spacing=12, row_spacing=4)
+        modifier_checks = {}
+        selected_modifiers = custom_hotkeys.get("modifiers", ["KMOD_RCTRL", "KMOD_RSHIFT"])
+        for index, (modifier, label) in enumerate(HOTKEY_MODIFIER_NAMES.items()):
+            check = create(Gtk.CheckButton, label=tr(label))
+            check.set_active(modifier in selected_modifiers)
+            modifier_checks[modifier] = check
+            modifier_grid.attach(check, index % 2, index // 2, 1, 1)
+        shortcut_box.append(modifier_grid)
+        action_dropdowns = {}
+        for action, label in HOTKEY_ACTIONS.items():
+            value = custom_hotkeys.get("bindings", {}).get(action, HOTKEY_DEFAULTS[action])
+            labels = [key.removeprefix("SDL_SCANCODE_") for key in HOTKEY_KEYS]
+            if value not in HOTKEY_KEYS:
+                labels.append(str(value))
+            dropdown = Gtk.DropDown(model=Gtk.StringList.new(
+                labels))
+            dropdown.set_name(action)
+            dropdown.set_selected(HOTKEY_KEYS.index(value) if value in HOTKEY_KEYS
+                                  else len(HOTKEY_KEYS))
+            action_dropdowns[action] = dropdown
+            shortcut_box.append(self._form_row(tr(label), dropdown))
+        reset_shortcuts = create(Gtk.Button, label=tr("Restore FreeRDP shortcuts"))
+        def reset_bindings(*_):
+            for modifier, check in modifier_checks.items():
+                check.set_active(modifier == "KMOD_RSHIFT")
+            for action, dropdown in action_dropdowns.items():
+                dropdown.set_selected(HOTKEY_KEYS.index(HOTKEY_DEFAULTS[action]))
+            hk_dd.set_selected(storage.HOTKEY_VALUES.index("defaults"))
+        reset_shortcuts.connect("clicked", reset_bindings)
+        shortcut_box.append(reset_shortcuts)
+        shortcut_error = create(Gtk.Label, label=tr("Select at least one modifier and a different key for each action."),
+                                xalign=0, wrap=True)
+        shortcut_error.add_css_class("error")
+        shortcut_box.append(shortcut_error)
+        def validate_shortcuts(*_):
+            valid = (any(check.get_active() for check in modifier_checks.values())
+                     and all(dd.get_selected() < len(HOTKEY_KEYS) for dd in action_dropdowns.values())
+                     and len({dd.get_selected() for dd in action_dropdowns.values()}) == len(action_dropdowns))
+            shortcut_error.set_visible(not valid)
+            save.set_sensitive(hk_dd.get_selected() != 3 or valid)
+        def update_shortcuts(*_):
+            shortcut_box.set_visible(hk_dd.get_selected() == 3)
+            validate_shortcuts()
+        hk_dd.connect("notify::selected", update_shortcuts)
+        for check in modifier_checks.values():
+            check.connect("toggled", validate_shortcuts)
+        for dropdown in action_dropdowns.values():
+            dropdown.connect("notify::selected", validate_shortcuts)
+        shortcut_box.set_visible(hv == "custom")
+        box.append(shortcut_box)
 
         workspace_values = storage.WORKSPACE_VALUES if res else storage.WORKSPACE_DEFAULT_VALUES
         workspace_labels = storage.WORKSPACE_LABELS if res else storage.WORKSPACE_DEFAULT_LABELS
@@ -1900,11 +1965,19 @@ class AvdApp(Gtk.Application):
         save.add_css_class("suggested-action")
 
         def do_save(*_):
+            validate_shortcuts()
+            if not save.get_sensitive():
+                return
+            hotkeys = storage.HOTKEY_VALUES[hk_dd.get_selected()]
+            if hotkeys == "custom":
+                hotkeys = {"modifiers": [key for key, check in modifier_checks.items() if check.get_active()],
+                           "bindings": {action: HOTKEY_KEYS[dd.get_selected()]
+                                        for action, dd in action_dropdowns.items()}}
             entry = {
                 "scale": storage.SCALE_VALUES[scale_dd.get_selected()],
                 "multimon": storage.MULTIMON_VALUES[mm_dd.get_selected()],
                 "cert": storage.CERT_VALUES[cert_dd.get_selected()],
-                "hotkeys": storage.HOTKEY_VALUES[hk_dd.get_selected()],
+                "hotkeys": hotkeys,
                 "new_workspace": workspace_values[workspace_dd.get_selected()],
                 "extra_args": extra_entry.get_text().strip(),
             }
@@ -1929,11 +2002,20 @@ class AvdApp(Gtk.Application):
                 storage.save_settings(self._settings)
             dlg.destroy()
             self._set_status(tr("Settings saved — applies to your next connection"))
+        validate_shortcuts()
         save.connect("clicked", do_save)
         btnbox.append(cancel)
         btnbox.append(save)
-        box.append(btnbox)
-        dlg.set_child(box)
+        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                     propagate_natural_height=True, max_content_height=660)
+        scroller.set_child(box)
+        scroller.set_vexpand(True)
+        layout = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        layout.append(scroller)
+        for margin in ("bottom", "start", "end"):
+            getattr(btnbox, f"set_margin_{margin}")(16)
+        layout.append(btnbox)
+        dlg.set_child(layout)
         dlg.present()
 
     def _error(self, msg):

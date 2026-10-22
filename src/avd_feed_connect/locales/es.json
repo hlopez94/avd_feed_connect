@@ -126,5 +126,22 @@
   "Use Default settings": "Usar configuración predeterminada",
   "Enabled": "Activado",
   "Disabled": "Desactivado",
-  "Language…": "Idioma…"
+  "Language…": "Idioma…",
+  "Left Ctrl": "Ctrl izquierdo",
+  "Right Ctrl": "Ctrl derecho",
+  "Left Shift": "Shift izquierdo",
+  "Right Shift": "Shift derecho",
+  "Left Alt": "Alt izquierdo",
+  "Right Alt": "Alt derecho",
+  "Left Super": "Super izquierdo",
+  "Right Super": "Super derecho",
+  "Toggle fullscreen": "Alternar pantalla completa",
+  "Minimize": "Minimizar",
+  "Toggle resizing": "Alternar redimensionado",
+  "Toggle input grab": "Alternar captura de teclado y ratón",
+  "Hold all selected modifiers, then press the action key.": "Mantén presionados todos los modificadores seleccionados y pulsa la tecla de la acción.",
+  "Restore FreeRDP shortcuts": "Restablecer atajos de FreeRDP",
+  "Select at least one modifier and a different key for each action.": "Selecciona al menos un modificador y una tecla distinta para cada acción.",
+  "FreeRDP defaults": "Valores predeterminados de FreeRDP",
+  "Right Shift + D disconnects. Choose Disabled to send all keys to the remote PC, or Custom to change shortcuts. All actions share the same modifiers.": "Shift derecho + D desconecta. Elige Deshabilitado para enviar todas las teclas al PC remoto o Personalizado para cambiar los atajos. Todas las acciones comparten los mismos modificadores."
 }
