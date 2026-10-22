@@ -3,7 +3,7 @@
 
 Run on GNOME Wayland with wl-paste and the AVD Flatpak installed:
     python tests/manual/check_sdl_clipboard.py
-Optional: --library /absolute/path/to/libSDL3.so.0 tests a replacement SDL.
+Optional: --library path/to/libSDL3.so.0 tests a replacement SDL (absolute or relative).
 WARNING: replaces the desktop clipboard with synthetic data.
 No remote connection or Teams process is needed.
 """
@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 import selectors
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -60,15 +59,16 @@ def provide(library, mode):
 
 def check(args):
     script = str(Path(__file__).resolve())
+    library = str(Path(args.library).resolve()) if args.library else None
     for mode in ("failure", "html", "empty"):
         instance_file = tempfile.TemporaryFile()
         command = ["flatpak", "run", f"--filesystem={script}:ro",
                    f"--instance-id-fd={instance_file.fileno()}",
                    "--env=SDL_VIDEODRIVER=x11"]
-        if args.library:
-            command.append(f"--filesystem={Path(args.library).resolve().parent}:ro")
+        if library:
+            command.append(f"--filesystem={Path(library).parent}:ro")
         command += ["--command=python3", args.flatpak, script, "--provide", mode,
-                    "--library", args.library or "/app/lib/libSDL3.so.0"]
+                    "--library", library or "/app/lib/libSDL3.so.0"]
         provider = subprocess.Popen(command, stdout=subprocess.PIPE, text=True,
                                     pass_fds=(instance_file.fileno(),))
         try:
