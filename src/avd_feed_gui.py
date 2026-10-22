@@ -44,6 +44,7 @@ import secrets
 import shutil
 import signal
 import subprocess
+import shlex
 import pty
 import select
 import uuid
@@ -74,6 +75,7 @@ from avd_feed_connect import config, http  # noqa: E402
 from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
 from avd_feed_connect.gui.workspaces import select_backend as workspace_backend  # noqa: E402
+from avd_feed_connect.rdp.security import resolve_security
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
     apply_client_hotkeys, build_display_args, session_log_path)
 from avd_feed_connect.i18n import _ as tr, ngettext, configure, LANGUAGES  # noqa: E402
@@ -1337,18 +1339,18 @@ class AvdApp(Gtk.Application):
             self._error(str(e))
             self._set_tile_state(res["id"], "state-ended", session)
             return
-        # Host pools not set up for Entra ID RDP auth (their feed .rdp lacks
-        # "enablerdsaadauth:i:1") reject /sec:aad with HYBRID_REQUIRED_BY_SERVER
-        # (issue #3), so use /sec:nla there and let FreeRDP prompt for the account
-        # credentials itself. NLA against a pure Entra-joined host still can't
-        # succeed from Linux (PKU2U needs the Windows CloudAP/PRT), but a
-        # hybrid-AD-joined host works with on-prem-AD credentials. The gateway
-        # keeps using the Entra token either way.
         try:
-            rdp_text = open(path).read()
-        except OSError:
-            rdp_text = ""
-        nla = "enablerdsaadauth:i:1" not in rdp_text.lower()
+            security = resolve_security(path, self._eff("sec", res, session),
+                                        self._eff_extra(res, session),
+                                        session.auth_modes.get(res["id"]))
+        except (OSError, ValueError) as error:
+            child._launching = False
+            self._set_connecting(res["id"], res["title"], False, session)
+            self._set_tile_state(res["id"], "state-ended", session)
+            self._error(tr("Could not prepare authentication: {error}").format(error=error))
+            return
+        child._security_decision = security
+        nla = security.mode == "nla"
         env = dict(os.environ)
         # sdl-freerdp (SDL3) and FreeRDP's own AAD webview are unstable on native
         # Wayland (#2: "Error 71 dispatching to Wayland display"). Force X11 /
@@ -1379,7 +1381,7 @@ class AvdApp(Gtk.Application):
         # ultrawide → 100%); AVD_SCALE overrides. Multi-monitor and any other flag
         # are opt-in via AVD_EXTRA_ARGS (e.g. "/multimon /gfx"), until a settings UI.
         # --- display config: env var > per-resource/default setting > auto ---
-        extra = self._eff_extra(res, session)
+        extra = shlex.join(security.options)
         if windowed:
             # A resizable window instead of /f: build_display_args drops the
             # fullscreen/smart-sizing/multimon flags and the feed's screen mode.
@@ -1475,6 +1477,10 @@ class AvdApp(Gtk.Application):
             log = open(logpath, "xb")
         except OSError:
             log = open(os.devnull, "wb")
+        decision = getattr(child, "_security_decision", None)
+        if decision:
+            log.write(f"[AVD auth] mode={decision.mode}; reason={decision.reason}\n".encode())
+            log.flush()
         try:
             while True:
                 try:
@@ -1518,6 +1524,15 @@ class AvdApp(Gtk.Application):
         """Handle one line of FreeRDP output (called from the reader thread)."""
         if not state["connected"] and "Logon Info" in line:
             state["connected"] = True
+            decision = getattr(child, "_security_decision", None)
+            if decision:
+                def remember():
+                    try:
+                        session.remember_security(res["id"], decision.mode, decision.fingerprint)
+                    except OSError as error:
+                        print(f"Could not remember authentication mode: {type(error).__name__}", file=sys.stderr)
+                    return GLib.SOURCE_REMOVE
+                GLib.idle_add(remember)
             placement = getattr(child, "_workspace_placement", None)
             if placement:
                 GLib.idle_add(placement.start)
@@ -1834,6 +1849,15 @@ class AvdApp(Gtk.Application):
         cert_dd.set_selected(storage.CERT_VALUES.index(cv) if cv in storage.CERT_VALUES else 0)
         box.append(self._form_row(tr("Server certificate"), cert_dd))
 
+        sec_dd = create(Gtk.DropDown, model=strings([tr(label) for label in storage.SEC_LABELS]))
+        sec_value = cur.get("sec", "auto")
+        sec_dd.set_selected(storage.SEC_VALUES.index(sec_value) if sec_value in storage.SEC_VALUES else 0)
+        box.append(self._form_row(tr("Session authentication"), sec_dd))
+        auth_note = create(Gtk.Label, xalign=0, wrap=True,
+            label=tr("Automatic respects the feed and remembers successful connections. If your feed does not advertise SSO, select Entra to test it. This does not bypass MFA or your organization's sign-in policy."))
+        auth_note.add_css_class("tile-sub")
+        box.append(auth_note)
+
         hk_dd = create(Gtk.DropDown, model=strings([tr(label) for label in storage.HOTKEY_LABELS]))
         hv = cur.get("hotkeys", "auto")
         hk_dd.set_selected(storage.HOTKEY_VALUES.index(hv) if hv in storage.HOTKEY_VALUES else 0)
@@ -1904,6 +1928,7 @@ class AvdApp(Gtk.Application):
                 "scale": storage.SCALE_VALUES[scale_dd.get_selected()],
                 "multimon": storage.MULTIMON_VALUES[mm_dd.get_selected()],
                 "cert": storage.CERT_VALUES[cert_dd.get_selected()],
+                "sec": storage.SEC_VALUES[sec_dd.get_selected()],
                 "hotkeys": storage.HOTKEY_VALUES[hk_dd.get_selected()],
                 "new_workspace": workspace_values[workspace_dd.get_selected()],
                 "extra_args": extra_entry.get_text().strip(),
@@ -1916,7 +1941,7 @@ class AvdApp(Gtk.Application):
                     entry["user_agent"] = storage.UA_PRESETS[ua_sel]
             # drop an all-default entry so the file stays tidy
             if entry["scale"] == "auto" and entry["multimon"] == "auto" \
-                    and entry["cert"] == "auto" and entry["hotkeys"] == "auto" \
+                    and entry["cert"] == "auto" and entry["sec"] == "auto" and entry["hotkeys"] == "auto" \
                     and entry["new_workspace"] == ("auto" if res else "off") \
                     and entry.get("user_agent", "auto") == "auto" \
                     and not entry["extra_args"]:

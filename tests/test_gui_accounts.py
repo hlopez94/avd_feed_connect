@@ -845,3 +845,67 @@ def test_localization_registrations_follow_native_lifetime_without_language_refr
     gc.collect()
     # No configure/refresh call is needed to remove dead registrations.
     assert tuple(map(len, registries)) == baseline
+
+def descendants(widget):
+    yield widget
+    child = widget.get_first_child()
+    while child:
+        yield from descendants(child)
+        child = child.get_next_sibling()
+
+
+
+def test_authentication_setting_roundtrip_and_inheritance(app):
+    owner = add_saved(app, 'a', 'test@example.test')
+    res = owner.resources[0]
+    app._settings['_default'] = {'sec': 'aad'}
+    assert app._eff('sec', res, owner) == 'aad'
+    app._open_settings(res, owner)
+    drain()
+    dialog = next(w for w in Gtk.Window.list_toplevels() if w.get_title().startswith('Settings —'))
+    dropdown = next(w for w in descendants(dialog) if isinstance(w, Gtk.DropDown)
+                    and w.get_model().get_string(0) == 'Automatic (use feed or remembered mode)')
+    dropdown.set_selected(2)
+    next(w for w in descendants(dialog) if isinstance(w, Gtk.Button) and w.get_label() == 'Save').emit('clicked')
+    assert owner.resource_settings[res['id']]['sec'] == 'nla'
+
+
+def test_authentication_remembered_only_after_logon_and_account_scoped(app):
+    from types import SimpleNamespace
+    from avd_feed_connect.rdp.security import SecurityDecision
+    a,b = add_saved(app, 'a', 'a@example.test'), add_saved(app, 'b', 'b@example.test')
+    res = a.resources[0]
+    child = SimpleNamespace(_security_decision=SecurityDecision('aad','connection setting',[],'fingerprint'))
+    state = {'connected':False}
+    app._on_freerdp_line(child,res,-1,'ERRCONNECT_LOGON_FAILURE',state,a)
+    drain()
+    assert res['id'] not in a.auth_modes
+    app._on_freerdp_line(child,res,-1,'Logon Info',state,a)
+    drain()
+    assert a.auth_modes[res['id']] == {'mode':'aad','fingerprint':'fingerprint'}
+    assert res['id'] not in b.auth_modes
+
+
+@pytest.mark.parametrize('override', ['aad', 'nla'])
+def test_gui_launch_passes_only_one_selected_security_mode(app, tmp_path, monkeypatch, override):
+    from pathlib import Path
+    owner = add_saved(app, 'auth-test', 'test@example.test')
+    app._select_account(owner.id)
+    res = owner.resources[0]; child = app._child_for(res['id'], owner)
+    Path(owner.client.output_dir).mkdir(parents=True, exist_ok=True)
+    path = tmp_path / 'desktop.rdp'; path.write_text('enablerdsaadauth:i:0\n')
+    fake = tmp_path / 'client'
+    fake.write_text('#!/usr/bin/python3\nimport sys\nprint(" ".join(sys.argv[1:]), flush=True)\n')
+    fake.chmod(0o755)
+    monkeypatch.setattr(gui.config, 'SDL', str(fake))
+    monkeypatch.setattr(app, '_ensure_token', lambda session: True)
+    monkeypatch.setattr(owner.client, 'download_rdp', lambda *args: str(path))
+    monkeypatch.setenv('AVD_SEC', override)
+    owner.resource_settings[res['id']] = {'extra_args': '/sec:nla /gfx'}
+    app._launch(child,res,False,owner)
+    logs=list(Path(owner.client.output_dir).glob('session_*.log'))
+    assert len(logs)==1
+    text=logs[0].read_text()
+    assert f'[AVD auth] mode={override}; reason=AVD_SEC override' in text
+    assert text.count('/sec:')==1
+    assert f'/sec:{override}' in text

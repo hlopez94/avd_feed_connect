@@ -1,7 +1,7 @@
 """Launch a downloaded .rdp with the bundled sdl-freerdp.
 
 The launch used by the command line is a simple, blocking full-screen session
-(``/gateway:type:arm /sec:aad``). The GUI drives sdl-freerdp differently — over
+(using the same AAD/NLA selection as the GUI). The GUI uses sdl-freerdp over
 a PTY, so it can resolve the connection-time AAD prompt silently — see
 :mod:`avd_feed_connect.gui.connect`; this module is the CLI path.
 """
@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .. import config
+from .security import resolve_security
 from .resources import set_rdp_dynamic_resolution, set_rdp_multimon
 
 
@@ -93,7 +94,10 @@ def apply_client_hotkeys(mode, path=None):
 
 def build_argv(sdl, path, upn):
     """Assemble the sdl-freerdp command line for a full-screen CLI connection."""
-    argv = [sdl, path, "/gateway:type:arm", "/sec:aad"]
+    decision = resolve_security(path)
+    argv = [sdl, path, "/gateway:type:arm", f"/sec:{decision.mode}"]
+    if decision.mode == "nla":
+        argv.append("/d:")
     if upn:
         argv.append(f"/u:{upn}")
     # Pin the host cert on first use by default; AVD_CERT=ignore turns the check

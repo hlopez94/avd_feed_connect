@@ -108,36 +108,36 @@ def test_malformed_display_args_are_reported(tmp_path):
     raise AssertionError("Malformed flags must not be silently ignored")
 
 
-def test_argv_core_flags():
-    argv = build_argv("/app/bin/sdl-freerdp", "/tmp/x.rdp", "")
+def test_argv_core_flags(tmp_path):
+    argv = build_argv("/app/bin/sdl-freerdp", _rdp(tmp_path, "enablerdsaadauth:i:1\n"), "")
     assert argv[0] == "/app/bin/sdl-freerdp"
-    assert argv[1] == "/tmp/x.rdp"
+    assert argv[1] == _rdp(tmp_path, "enablerdsaadauth:i:1\n")
     assert "/gateway:type:arm" in argv
     assert "/sec:aad" in argv
     assert "/f" in argv
     assert "-multimon" in argv
 
 
-def test_argv_includes_user_when_upn_set():
-    argv = build_argv("sdl-freerdp", "x.rdp", "sam@contoso.com")
+def test_argv_includes_user_when_upn_set(tmp_path):
+    argv = build_argv("sdl-freerdp", _rdp(tmp_path, "enablerdsaadauth:i:1\n"), "sam@contoso.com")
     assert "/u:sam@contoso.com" in argv
 
 
-def test_argv_omits_user_when_no_upn():
-    argv = build_argv("sdl-freerdp", "x.rdp", "")
+def test_argv_omits_user_when_no_upn(tmp_path):
+    argv = build_argv("sdl-freerdp", _rdp(tmp_path, "enablerdsaadauth:i:1\n"), "")
     assert not any(a.startswith("/u:") for a in argv)
 
 
-def test_argv_verifies_cert_by_default(monkeypatch):
+def test_argv_verifies_cert_by_default(tmp_path, monkeypatch):
     monkeypatch.delenv("AVD_CERT", raising=False)
-    argv = build_argv("sdl-freerdp", "x.rdp", "")
+    argv = build_argv("sdl-freerdp", _rdp(tmp_path, "enablerdsaadauth:i:1\n"), "")
     assert "/cert:tofu" in argv
     assert "/cert:ignore" not in argv
 
 
-def test_argv_cert_ignore_opt_out(monkeypatch):
+def test_argv_cert_ignore_opt_out(tmp_path, monkeypatch):
     monkeypatch.setenv("AVD_CERT", "ignore")
-    argv = build_argv("sdl-freerdp", "x.rdp", "")
+    argv = build_argv("sdl-freerdp", _rdp(tmp_path, "enablerdsaadauth:i:1\n"), "")
     assert "/cert:ignore" in argv
     assert "/cert:tofu" not in argv
 

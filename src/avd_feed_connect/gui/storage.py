@@ -33,6 +33,8 @@ MULTIMON_VALUES = ["auto", "off", "on"]
 # default, which is itself verify, so the secure mode is the out-of-the-box one.
 CERT_LABELS = ["Automatic (verify)", "Verify", "Don't verify (if you can't connect)"]
 CERT_VALUES = ["auto", "verify", "ignore"]
+SEC_LABELS = ["Automatic (use feed or remembered mode)", "Microsoft Entra ID", "NLA (username and password)"]
+SEC_VALUES = ["auto", "aad", "nla"]
 # sdl-freerdp's own Right Shift + key shortcuts (D disconnects the session, Enter
 # toggles fullscreen). "auto" leaves FreeRDP's config untouched; "off" passes every
 # key through to the remote desktop.

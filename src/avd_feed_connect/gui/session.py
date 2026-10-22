@@ -30,6 +30,13 @@ class AccountSession:
                 self.resource_settings = json.load(source)
         except (OSError, ValueError):
             self.resource_settings = {}
+        try:
+            with open(os.path.join(directory, 'auth-modes.json')) as source:
+                self.auth_modes = json.load(source)
+            if not isinstance(self.auth_modes, dict):
+                self.auth_modes = {}
+        except (OSError, ValueError):
+            self.auth_modes = {}
 
     @property
     def id(self):
@@ -90,6 +97,13 @@ class AccountSession:
         with self.refresh_lock:
             if not self.removed:
                 write_json(os.path.join(self.directory, 'settings.json'), self.resource_settings)
+
+    def remember_security(self, resource_id, mode, fingerprint):
+        """Only call after successful logon; never retain passwords or tokens."""
+        with self.refresh_lock:
+            if not self.removed and mode in ('aad', 'nla'):
+                self.auth_modes[resource_id] = {'mode': mode, 'fingerprint': fingerprint}
+                write_json(os.path.join(self.directory, 'auth-modes.json'), self.auth_modes)
 
     def close(self):
         with self.refresh_lock:
