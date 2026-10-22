@@ -75,7 +75,7 @@ from avd_feed_connect import config, http  # noqa: E402
 from avd_feed_connect.auth.oauth import _b64url  # noqa: E402
 from avd_feed_connect.client import AvdClient  # noqa: E402
 from avd_feed_connect.gui.workspaces import select_backend as workspace_backend  # noqa: E402
-from avd_feed_connect.rdp.security import resolve_security
+from avd_feed_connect.rdp.security import resolve_security  # noqa: E402
 from avd_feed_connect.rdp.launcher import (  # noqa: E402
     apply_client_hotkeys, build_display_args, session_log_path)
 from avd_feed_connect.i18n import _ as tr, ngettext, configure, LANGUAGES  # noqa: E402
